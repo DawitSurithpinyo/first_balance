@@ -1,18 +1,15 @@
-interface registerItem {
-    RegisterID: string,
-    TranactionsName: string,
+export interface RecordItem {
+    TransactionName: string,
     AccountID: string
     Value: number,
     Date: string,
     Memo: string
 }
 
-
-
-interface RegisterJson {
-    all_venues: registerItem[]
+export interface RecordJson {
+    all_records: RecordItem[]
 }
 
-interface RegisterResponseJson {
+export interface RecordResponseJson {
     message : string
 }
