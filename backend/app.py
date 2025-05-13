@@ -22,51 +22,69 @@ def get_records():
     return jsonify({"all_records": records}), 200
 
 
-# When adding a new record, frontend just need to input date in format "DD-MM-YYYY",
-# then it will convert to datetime object here
+# When adding a new record, frontend just need to input Date in format "DD-MM-YYYY",
+# then it will convert to Datetime object here
 @app.route('/add_record', methods=['POST'])
 def add_record():
     data = request.get_json()
 
-    transactionName = data.get("transactionName")
-    accountID = data.get("accountID")
-    value = data.get("value")
-    date = data.get("date")
-    memo = data.get("memo")
+    TransactionName = data.get("TransactionName")
+    AccountID = data.get("AccountID")
+    Value = data.get("Value")
+    Date = data.get("Date")
+    Memo = data.get("Memo")
 
-    # transaction name, account ID, value, and date are required
-    if not transactionName or not accountID or not value or not date:
+    # transaction name, account ID, Value, and Date are required
+    if not TransactionName or not AccountID or not Value or not Date:
         return jsonify({"error": "Missing required fields"}), 400
     
     try:
-      date_obj = datetime.datetime.strptime(date, "%d-%m-%Y")
+      Date_obj = datetime.datetime.strptime(Date, "%d-%m-%Y")
     except ValueError:
-      return jsonify({"error": "Invalid date format. Expected DD-MM-YYYY"}), 400
+      return jsonify({"error": "Invalid Date format. Expected DD-MM-YYYY"}), 400
     
     # Check whether record with the same data (all required fields are the same) already exist
     exist = False
     existing = collection.find()
     for entry in existing:
-       if entry["transactionName"] == transactionName and entry["accountID"] == accountID and entry["value"] == value\
-       and entry["date"] == date_obj:
+       if entry["TransactionName"] == TransactionName and entry["AccountID"] == AccountID and entry["Value"] == Value\
+       and entry["Date"] == Date:
           exist = True
     
     if exist == True:
        return jsonify({"error": "Record already existed."}), 400
     
     new_record = {
-       "transactionName": transactionName,
-       "accountID": accountID,
-       "value": value,
-       "date": date_obj,
-       "memo": memo
+       "TransactionName": TransactionName,
+       "AccountID": AccountID,
+       "Value": Value,
+       "Date": Date, # No point to keep date as datetime object, "DD-MM-YYYY" is enough
+       "Memo": Memo
     }
 
     result = collection.insert_one(new_record)
     return jsonify({"message": "Record added successfully"}), 201
 
 
-# May add update and delete later
+# May add upDate and delete later
 
 if __name__ == '__main__':
-    app.run(port=5000)
+   # Test database
+   if len(list(collection.find())) > 0:
+      result = collection.delete_many({})
+   t1 = {
+      "TransactionName": "A",
+      "AccountID": "01",
+      "Value": -20,
+      "Date": "20-10-2025",
+      "Memo": "test1"
+   }
+   t2 = {
+      "TransactionName": "B",
+      "AccountID": "02",
+      "Value": 50,
+      "Date": "01-05-2025",
+   }
+   result = collection.insert_many([t1, t2])
+
+   app.run(port=5000)
