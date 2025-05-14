@@ -1,8 +1,19 @@
 import { StyleSheet } from "react-native";
 
+
 ///placeholder from other project, will adjust if see fit
 const BalanceRegisterStyle = StyleSheet.create(
     {
+        titleContainer: {
+            paddingVertical: 50,
+            alignItems: 'center',
+            justifyContent: 'center'
+        },
+        titleText: {
+            fontSize: 50,
+            fontWeight: 'bold',
+            color: 'white'
+        },
         mainContainer: {
             flex: 1
         },
@@ -15,12 +26,12 @@ const BalanceRegisterStyle = StyleSheet.create(
         picker:{
             height:50,
             borderWidth:1,
-            borderColor: "#4654eb",
+            borderColor: "#ebbaf7",
             borderRadius: 12,
             paddingHorizontal: 10,
-            backgroundColor : '#efedfa',
+            backgroundColor : '#212121',
             fontSize:16,
-            color: '#2b2b2b',
+            color: '#ebbaf7',
             elevation : 2,
             shadowColor : "#000",
             shadowOffset: {width: 0, height:2},
@@ -30,12 +41,12 @@ const BalanceRegisterStyle = StyleSheet.create(
         input: {
             height:50,
             borderWidth:1,
-            borderColor: "#4654eb",
+            borderColor: "#ebbaf7",
             borderRadius: 12,
             paddingHorizontal: 10,
-            backgroundColor : '#efedfa',
+            backgroundColor : '#212121',
             fontSize:16,
-            color: '#2b2b2b',
+            color: '#ebbaf7',
             elevation : 2,
             shadowColor : "#000",
             shadowOffset: {width: 0, height:2},
@@ -44,7 +55,7 @@ const BalanceRegisterStyle = StyleSheet.create(
         },
         label:{
             fontSize:16,
-            color: "#4654eb",
+            color: "#ebbaf7",
             marginVertical:6,
             marginLeft: 4
         },
@@ -56,4 +67,4 @@ const BalanceRegisterStyle = StyleSheet.create(
     }
 )
 
-export default venueBookStyles;
+export default BalanceRegisterStyle;
