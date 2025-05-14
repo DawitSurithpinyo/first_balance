@@ -11,11 +11,11 @@ export default function addRecord({recItem, setResponse}:
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    transactionName: recItem.TransactionName,
-                    accountID: recItem.AccountID,
-                    value: recItem.Value,
-                    date: recItem.Date,
-                    memo: recItem.Memo
+                    TransactionName: recItem.TransactionName,
+                    AccountID: recItem.AccountID,
+                    Value: recItem.Value,
+                    Date: recItem.Date,
+                    Memo: recItem.Memo
                 })
             })
             if(response.ok){

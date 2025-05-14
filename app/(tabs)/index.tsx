@@ -1,25 +1,16 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { RecordItem } from '@/interface';
-import getRecords from '@/lib/getRecords';
+import { useRecordContext } from '@/lib/recordContext';
 import { ImageBackground } from 'expo-image';
-import { useEffect, useState } from 'react';
 
 export default function TabTwoScreen() {
-  const [listOfRecords, setListOfRecords] = useState<RecordItem[]>([]);
-  useEffect(() => {
-    getRecords({setRecordsData: setListOfRecords})
-  }, [])
-
-  // call this whenever data is updated
-  const refreshRecords = () => {
-    getRecords({setRecordsData: setListOfRecords})
-  };
+  const {records: listOfRecords, setRecords: setListOfRecords} = useRecordContext();
 
   var Balance = 0
   var totalSpent = 0
   var totalEarned = 0
-  listOfRecords.map((record) => {
+  listOfRecords.map((record: RecordItem) => {
     if(record.Value < 0){
       totalSpent += record.Value
     }
@@ -133,19 +124,6 @@ export default function TabTwoScreen() {
           <Text style={styles.totalEarnedSpentText}>Total spent: {Math.abs(totalSpent)}</Text>
         </View>
       </View>
-
-      {
-        listOfRecords.map((record) => (
-          <Text>
-            {record.TransactionName} <br></br>
-            {record.AccountID} <br></br>
-            {record.Value} <br></br>
-            {record.Date} <br></br>
-            {record.Memo} <br></br>
-            <br></br>
-          </Text>
-        ))
-      }
     </View>
   );
 }
