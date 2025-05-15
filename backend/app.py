@@ -22,8 +22,6 @@ def get_records():
     return jsonify({"all_records": records}), 200
 
 
-# When adding a new record, frontend just need to input Date in format "DD-MM-YYYY",
-# then it will convert to Datetime object here
 @app.route('/add_record', methods=['POST'])
 def add_record():
     data = request.get_json()
@@ -87,4 +85,4 @@ if __name__ == '__main__':
    }
    result = collection.insert_many([t1, t2])
 
-   app.run(port=5000)
+   app.run(host='0.0.0.0', port=5000)
