@@ -1,3 +1,5 @@
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { RecordItem } from '@/interface';
@@ -5,7 +7,14 @@ import { useRecordContext } from '@/lib/recordContext';
 import { ImageBackground } from 'expo-image';
 
 export default function TabTwoScreen() {
-  const {records: listOfRecords, setRecords: setListOfRecords} = useRecordContext();
+  const {records: listOfRecords, setRecords: setListOfRecords, fetchRecords} = useRecordContext();
+
+  // use useFocusEffect on individual pages instead of in recordContext.tsx
+  useFocusEffect(
+    useCallback(() => {
+      fetchRecords();
+    }, [fetchRecords])
+  );
 
   var Balance = 0
   var totalSpent = 0

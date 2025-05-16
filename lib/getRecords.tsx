@@ -8,7 +8,7 @@ export default function getRecords({setRecordsData}: {setRecordsData:Function}) 
             // which you can get by: when running npm run android, there will be a link like this:
             // exp://<your local IP>:<port number>
             // put <your local IP> here
-            const ip = "192.168.1.49"
+            const ip = "192.168.1.88"
             var link = "";
             if(Platform.OS === 'web'){
                 link = "http://127.0.0.1:5000"

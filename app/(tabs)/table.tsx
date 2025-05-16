@@ -1,67 +1,191 @@
 import { RecordItem } from '@/interface';
 import { useRecordContext } from '@/lib/recordContext';
-import React, { useState } from 'react';
-import { Button, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { TextInput } from 'react-native-paper';
 import { DatePickerModal } from "react-native-paper-dates";
+import Animated from 'react-native-reanimated';
 import { Row, Table } from 'react-native-table-component';
 
 export default function HomeScreen() {
-  const {width: screenWidth} = useWindowDimensions();
-  const {records: listOfRecords, setRecords: setListOfRecords} = useRecordContext();
+  const {height, width: screenWidth} = useWindowDimensions();
+  const {records: listOfRecords, setRecords: setListOfRecords, fetchRecords} = useRecordContext();
   const [showDatePicker1, setShowDatePicker1] = useState(false);
   const [showDatePicker2, setShowDatePicker2] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  // use useFocusEffect on individual pages instead of in recordContext.tsx
+  useFocusEffect(
+    useCallback(() => {
+      fetchRecords();
+    }, [fetchRecords])
+  );
+
+  const defaultData = useMemo(() => (
+    listOfRecords.map((record: RecordItem) => [
+        record.TransactionName,
+        record.AccountID,
+        record.Value,
+        record.Date,
+        record.Memo
+      ])
+  ), [listOfRecords]);
+
+  const [filteredData, setFilteredData] = useState(defaultData);
+
+  useEffect(() => {
+    setFilteredData(defaultData);
+  }, [defaultData]);
+
+
+  // const SMALL_SCREEN = 800
+  // var mainContainerStyle;
+  // if(width > SMALL_SCREEN){
+  //   mainContainerStyle = styles.mainContainerNormalScreen
+  // }
 
   const tableData = {
     header: ['Transaction name', 'Account ID', 'Value', 'Date', 'Memo'],
-    data: [] as any[][], // need to define data array as 2D array with multiple types (any)
-    widthArr: [0.15*screenWidth, 0.1*screenWidth, 0.1*screenWidth, 0.1*screenWidth, 0.15*screenWidth]
+    data: filteredData,
+    widthArr: [0.25*screenWidth, 0.2*screenWidth, 0.15*screenWidth, 0.1*screenWidth, 0.25*screenWidth]
   };
 
-  listOfRecords.map((record: RecordItem) => {
-    tableData.data.push([
-      record.TransactionName, 
-      record.AccountID,
-      record.Value,
-      record.Date,
-      record.Memo
-    ])
-  })
-
-  const [startFilterDate, setStartFilterDate] = useState<Date | undefined>(undefined);
-  const [endFilterDate, setEndFilterDate] = useState<Date | undefined>(undefined);
-
-  const onDatePicker1Confirm = (params: {date:Date|undefined}) => {
+  const onDatePicker1Confirm = (params: {date: Date | undefined}) => {
     setShowDatePicker1(false);
-    setStartFilterDate(params.date);
-  }
-  const onDatePicker2Confirm = (params: {date:Date|undefined}) => {
+    if (params.date) {
+      // Normalize to start of day (the DatePickerModal gives date with hours and finer details too, 
+      // which can unintentionally leaves out a transaction if selected date is same as date of that transaction)
+      // to make sure, set it to first millisecond of the day, so it will be "before in time" comparing to 
+      // any transactions with the same date
+      const normalizedDate = new Date(params.date);
+      normalizedDate.setHours(0, 0, 0, 0); // first millisecond of the day
+      setFilters({ ...filters, startDate: normalizedDate });
+    } else {
+      setFilters({ ...filters, startDate: undefined });
+    }
+  };
+
+  const onDatePicker2Confirm = (params: {date: Date | undefined}) => {
     setShowDatePicker2(false);
-    setEndFilterDate(params.date);
-  }
+    if (params.date) {
+      // Normalize to end of day
+      const normalizedDate = new Date(params.date);
+      normalizedDate.setHours(23, 59, 59, 999); // last millisecond of the day
+      setFilters({ ...filters, endDate: normalizedDate });
+    } else {
+      setFilters({ ...filters, endDate: undefined });
+    }
+  };
 
   const [filters, setFilters] = useState({
     transactionName: '',
     accountID: '',
-    minValue: '',
-    maxValue: '',
-    startDate: '',
-    endDate: '',
+    minValue: Number.MIN_SAFE_INTEGER,
+    maxValue: Number.MAX_SAFE_INTEGER,
+    startDate: undefined as Date | undefined,
+    endDate: undefined as Date | undefined,
     memo: ''
   });
 
+  const [invalidMsg, setInvalidMsg] = useState('')
+
   const handleFilterSubmit = () => {
-    //...
+    var localInvalidMsg = ''
+    var isValid = true
+    // since onChangeText={... Number(text)}, if input is a text, it will become NaN anyway
+    // which will not get pass here
+    if(isNaN(filters.minValue) || isNaN(filters.maxValue)){
+      isValid = false
+      localInvalidMsg = 'Please enter a numerical input for min/max value'
+    }
+    else if(filters.minValue > filters.maxValue){
+      isValid = false
+      localInvalidMsg = 'Min value cannot be more than max value'
+    }
+    else if(filters.startDate && filters.endDate){
+      if(filters.startDate > filters.endDate){
+        isValid = false
+        localInvalidMsg = 'start date cannot be after the end date'
+      }
+    }
+
+    setInvalidMsg(localInvalidMsg)
+
+    // cannot submit if above conditions are violated
+    if(!isValid){
+      return
+    }
+
+    const regexTransactionName = new RegExp(filters.transactionName.toLowerCase())
+    const regexAccountID = new RegExp(filters.accountID.toLowerCase())
+    const regexMemo = new RegExp(filters.memo.toLowerCase())
+
+    // const safeStartDate = filters.startDate ?? new Date(0); // if undefined, fall back to Jan 1, 1970
+    // const safeEndDate = filters.endDate ?? new Date(); // fall back to today
+    // this is fine because if date is somehow undefined, it means user want to include any date anyway
+
+    let temp: any[][] = [];
+    for(let i = 0; i < defaultData.length; i++){
+      let validCount = 0;
+
+      if(regexTransactionName.test(defaultData[i][0].toLowerCase())){
+        validCount += 1
+      }
+      if(regexAccountID.test(defaultData[i][1].toLowerCase())){
+        validCount += 1
+      }
+      // Since memo is optional, it can be undefined, which throws error if try to use .toLowerCase() on it
+      // just let it be an empty string I guess?
+      if(defaultData[i][4] === undefined){
+        defaultData[i][4] = ''
+      }
+      if(regexMemo.test(defaultData[i][4].toLowerCase())){
+        validCount += 1
+      }
+
+      if(defaultData[i][2] >= filters.minValue && defaultData[i][2] <= filters.maxValue){
+        validCount += 1
+      }
+
+      const [day, month, year] = (defaultData[i][3] as string).split('-').map(Number);
+      const recordDate = new Date(year, month - 1, day);
+      let dateValid = true;
+      if (filters.startDate) {
+        dateValid = dateValid && recordDate >= filters.startDate;
+      }
+      if (filters.endDate) {
+        dateValid = dateValid && recordDate <= filters.endDate;
+      }
+      // if both date aren't specified, automatically, it just let whatever dates pass
+      // this is genius thank you Deepseek
+      if (dateValid) {
+        validCount += 1;
+      }
+
+      if(validCount === 5){
+        temp.push(defaultData[i])
+      }
+    }
+
+    setFilteredData(temp)
+    setShowSidebar(false)
+
   }
 
   return (
-  <View>
-    <View style={styles.mainContainer}>
+  <Animated.ScrollView>
+    <View style={styles.mainContainerNormalScreen}>
 
       {/* filters */}
       <View style={[styles.filtersContainer,{display:showSidebar?'flex':'none'}]}>
+
+        {/* filters window close button */}
+        <TouchableOpacity style={styles.filtersCloseButton} onPress={() => setShowSidebar(false)}>
+          <Text style={{fontWeight: 'bold', fontSize: 20, color: 'white'}}>X</Text>
+        </TouchableOpacity>
+
         <Text style={screenWidth>=576?styles.filtersTitleText:styles.PhonefiltersTitleText}>Filter transactions by fields</Text>
+        <Text style={styles.filtersSubtitleText}>If no value is given to a field, it will include any value possible for that field. Text searches are case-insensitive.</Text>
         <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Transaction name</Text>
         <TextInput
           placeholder='Enter a substring to search for'
@@ -80,22 +204,41 @@ export default function HomeScreen() {
           style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
 
-        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Minimum value</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Minimum value (inclusive)</Text>
         <TextInput
+          keyboardType='numeric'
           placeholder='Enter a number'
-          value={filters.minValue}
-          onChangeText={(text) => setFilters({ ...filters, minValue: text })} // convert to number later
+          onChangeText={(text) => {
+            if (text.trim() === '') {
+              // make sure to fall back to default (Number.MIN_SAFE_INTEGER) again when user input minValue before,
+              // but doesn't input (left it blank) now
+              setFilters({ ...filters, minValue: Number.MIN_SAFE_INTEGER });
+            } else {
+              // if user input a text, let it become NaN.
+              // it'll be handled in handleFilterSubmit anyway
+              const num = Number(text);
+              setFilters({ ...filters, minValue: num });
+            }
+          }}
           style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
-        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Maximum value</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Maximum value (inclusive)</Text>
         <TextInput
+          keyboardType='numeric'
           placeholder='Enter a number'
-          value={filters.maxValue}
-          onChangeText={(text) => setFilters({ ...filters, maxValue: text })} // convert to number later
+          onChangeText={(text) => {
+            if (text.trim() === '') {
+              setFilters({ ...filters, maxValue: Number.MAX_SAFE_INTEGER });
+            } else {
+              const num = Number(text);
+              setFilters({ ...filters, maxValue: num });
+            }
+          }}
           style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
 
-        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Start date</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Start date (inclusive)</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>You picked: {filters.startDate? filters.startDate.toDateString(): "None"}</Text>
         <Button title="Select start date"
           color='#F48FB1'
           onPress={()=>{setShowDatePicker1(true)}}/>
@@ -104,11 +247,21 @@ export default function HomeScreen() {
           mode="single"
           visible={showDatePicker1}
           onDismiss={() => setShowDatePicker1(false)}
-          date={startFilterDate}
+          date={filters.startDate ?? new Date()}
           placeholder='Starting date'
           onConfirm={onDatePicker1Confirm}
         />
-        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>End date</Text>
+        <Button title="reset to none"
+          color="#E91E63"
+          onPress={() => {
+              setFilters({ ...filters, startDate: undefined});
+              setShowDatePicker1(false);
+            }
+          }
+        />
+
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>End date (inclusive)</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>You picked: {filters.endDate? filters.endDate.toDateString(): "None"}</Text>
         <Button title="Select end date"
           color='#F48FB1'
           onPress={()=>{setShowDatePicker2(true)}}/>
@@ -117,9 +270,17 @@ export default function HomeScreen() {
           mode="single"
           visible={showDatePicker2}
           onDismiss={() => setShowDatePicker2(false)}
-          date={endFilterDate}
+          date={filters.endDate ?? new Date()}
           placeholder='Ending date'
           onConfirm={onDatePicker2Confirm}
+        />
+        <Button title="reset to none"
+          color="#E91E63"
+          onPress={() => {
+              setFilters({ ...filters, endDate: undefined});
+              setShowDatePicker2(false);
+            }
+          }
         />
 
         <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Memo</Text>
@@ -132,9 +293,10 @@ export default function HomeScreen() {
         />
 
         <View style={{padding: 10}}>
+        <Text style={styles.invalidMsgStyle}>{invalidMsg}</Text>
         <Button title="Confirm filter"
           color='darkorchid'
-          onPress={() => {handleFilterSubmit(),setShowSidebar(false)}}
+          onPress={() => {handleFilterSubmit()}}
         />
         </View>
       </View>
@@ -154,9 +316,9 @@ export default function HomeScreen() {
             </Table>
             <ScrollView style={styles.recordTableDataWrapper}>
               <Table>
-                {tableData.data.map((rowData, index) => (
+                {filteredData.map((rowData: [], index: React.Key) => (
                   <Row
-                    key={index} // Add a unique key
+                    key={index}
                     data={rowData}
                     widthArr={tableData.widthArr}
                     style={styles.recordTableDataCells}
@@ -169,69 +331,12 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
       </View>
-    </View>
-    // <ParallaxScrollView
-    //   headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-    //   headerImage={
-    //     <Image
-    //       source={require('@/assets/images/partial-react-logo.png')}
-    //       style={styles.reactLogo}
-    //     />
-    //   }>
-    //   <ThemedView style={styles.titleContainer}>
-    //     <ThemedText type="title">Welcome!</ThemedText>
-    //   </ThemedView>
-    //   <ThemedView style={styles.stepContainer}>
-    //     <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-    //     <ThemedText>
-    //       Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-    //       Press{' '}
-    //       <ThemedText type="defaultSemiBold">
-    //         {Platform.select({
-    //           ios: 'cmd + d',
-    //           android: 'cmd + m',
-    //           web: 'F12',
-    //         })}
-    //       </ThemedText>{' '}
-    //       to open developer tools.
-    //     </ThemedText>
-    //   </ThemedView>
-    //   <ThemedView style={styles.stepContainer}>
-    //     <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-    //     <ThemedText>
-    //       {`Tap the Explore tab to learn more about what's included in this starter app.`}
-    //     </ThemedText>
-    //   </ThemedView>
-    //   <ThemedView style={styles.stepContainer}>
-    //     <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-    //     <ThemedText>
-    //       {`When you're ready, run `}
-    //       <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-    //       <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-    //       <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-    //       <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-    //     </ThemedText>
-    //   </ThemedView>
-    // </ParallaxScrollView>
-
-    // <View>
-    //   <ScrollView>
-    //     <DataTable style={styles.tableContainer}>
-    //       <DataTable.Header style={styles.tableHeader}>
-    //         <DataTable.Title textStyle={styles.headerCellText}>Transaction Name</DataTable.Title>
-    //         <DataTable.Title textStyle={styles.headerCellText}>Account ID</DataTable.Title>
-    //         <DataTable.Title textStyle={styles.headerCellText} numeric>Value</DataTable.Title>
-    //         <DataTable.Title textStyle={styles.headerCellText}>Date</DataTable.Title>
-    //         <DataTable.Title textStyle={styles.headerCellText}>Memo</DataTable.Title>
-    //       </DataTable.Header>
-    //     </DataTable>
-    //   </ScrollView>
-    // </View>
+    </Animated.ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
+  mainContainerNormalScreen: {
     flexDirection: 'row',
     justifyContent: 'space-between', // Pushes children apart
     alignItems: 'flex-start', // Align items to the top
@@ -295,6 +400,12 @@ const styles = StyleSheet.create({
     display : 'flex'
   },
 
+  filtersCloseButton: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'red',
+    padding: 5
+  },
+
   filtersTitleText: {
     fontWeight: 'bold',
     fontSize: 22
@@ -305,10 +416,20 @@ const styles = StyleSheet.create({
     fontSize: 15
   },
 
+  filtersSubtitleText: {
+    fontWeight: 'bold',
+    fontSize: 15
+  },
+
   filtersFieldsText: {
     marginTop: 15,
     fontWeight: '400',
     fontSize: 17
+  },
+
+  invalidMsgStyle: {
+    color: 'red',
+    fontWeight: '600'
   },
   PhonefiltersFieldsText: {
     marginTop: 15,

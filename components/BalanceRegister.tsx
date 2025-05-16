@@ -1,4 +1,4 @@
-import { RecordItem } from "@/interface"
+import { RecordItem, RecordResponseJson } from "@/interface"
 import addRecord from "@/lib/addRecord"
 import { Picker } from "@react-native-picker/picker"
 import { format } from "date-fns"
@@ -9,8 +9,12 @@ import BalanceRegisterStyle from "./BalanceRegisterStyle"
 import { ThemedText } from "./ThemedText"
 import { ThemedView } from "./ThemedView"
 
+import { useRecordContext } from "@/lib/recordContext"
+
 export default function BalanceRegister()
 {
+    const {fetchRecords} = useRecordContext();
+
     const SM_SCREEN = 576
     const {height, width} = useWindowDimensions()
     //recieve or pay is a pick value that help user deduct whether they're paying or earning money
@@ -22,51 +26,80 @@ export default function BalanceRegister()
     const [registerDate, setRegisterDate] = useState<Date|undefined>(undefined)
     const [memo, setMemo] = useState('')
     const [invalidMsg, setInvalidMsg] = useState('')
-    const [val, setVal] = useState(Number())
+    // const [val, setVal] = useState(Number())
     const [registerResponse, setRegisterResponse] = useState<RecordResponseJson|undefined>(undefined)
 
 
-    const handleRegistry = () => {
+    const handleRegistry = async () => {
+        let isValid = true;
         const today = new Date()
         today.setHours(23,59,59,0)
+        // setInvalidMsg('');
+        let localInvalidMsg = ''
+
         if(accountID.trim()===''){
-            setInvalidMsg('please enter the account ID')
+            // setInvalidMsg('please enter the account ID')
+            localInvalidMsg = 'please enter the account ID'
+            isValid = false
         }
         else if(transactionName.trim()===''){
-            setInvalidMsg('please enter the transaction name')
+            // setInvalidMsg('please enter the transaction name')
+            localInvalidMsg = 'please enter the transaction name'
+            isValid = false
         }
         else if(value.trim()===''){
-            setInvalidMsg('please enter the transaction value')
+            // setInvalidMsg('please enter the transaction value')
+            localInvalidMsg = 'please enter the transaction value'
+            isValid = false
         }
-        else if(Number.isNaN(value.trim())){
-            setInvalidMsg('please enter numeric amount of transaction')
+        else if(isNaN(Number(value.trim()))){
+            // setInvalidMsg('please enter numeric amount of transaction value')
+            localInvalidMsg = 'please enter numeric amount of transaction value'
+            isValid = false
         }
         else if(Number(value.trim())<=0){
-            setInvalidMsg('please enter positive amount of transaction')
+            // setInvalidMsg('please enter positive amount of transaction value')
+            localInvalidMsg = 'please enter positive amount of transaction value'
+            isValid = false
         }
         else if(!registerDate || registerDate==undefined){
-            setInvalidMsg('Please select register date')
+            // setInvalidMsg('Please select register date')
+            localInvalidMsg = 'Please select register date'
+            isValid = false
         }
         else if(registerDate>=today){
-            setInvalidMsg('you can only register transaction happened today or the day before that')
+            // setInvalidMsg('you can only register transaction happened today or the day before that')
+            localInvalidMsg = 'you can only register transaction happened today or the day before that'
+            isValid = false
         }
-        else{
-            setInvalidMsg('')
+        // else{
+        //     // setInvalidMsg('')
+        //     localInvalidMsg = ''
+        // }
+
+        // Update state ONCE with final message
+        setInvalidMsg(localInvalidMsg);
+
+        // prevent submit button being clickable when invalidMsg !== ''
+        if (!isValid){
+            return;
         }
 
-        setVal(receiveOrPay == 'pay'? 0 - Number(value):Number(value))
+        
+        const numericValue = receiveOrPay === 'pay' 
+            ? -Number(value) // if pay, number is negative (lose money)
+            : Number(value)
 
-        if(invalidMsg===''){
-            const Recorditem:RecordItem = {
-                TransactionName: transactionName,
-                AccountID: accountID,
-                Value: Number(val),
-                Date: (registerDate!=undefined)? format(registerDate,'dd-MM-yyyy'):'',
-                Memo: memo
+        const Recorditem:RecordItem = {
+            TransactionName: transactionName,
+            AccountID: accountID,
+            Value: numericValue,
+            Date: (registerDate!=undefined)? format(registerDate,'dd-MM-yyyy'):'',
+            Memo: memo
+        }
 
-            }
-        addRecord({recItem:Recorditem, setResponse:setRegisterResponse})
-
+        await addRecord({recItem:Recorditem, setResponse:setRegisterResponse})
+        await fetchRecords()
 
         //Reset booking form
         setTransactionName('')
@@ -75,7 +108,6 @@ export default function BalanceRegister()
         setValue('')
         setRegisterDate(undefined)
         setMemo('')
-        }
     }
 
     const onDatePickerConfirm = (params: {date:Date|undefined}) =>{
@@ -108,7 +140,7 @@ export default function BalanceRegister()
 
             <ThemedText style={BalanceRegisterStyle.label}>Transaction value: </ThemedText>
             <TextInput value={value} onChangeText={setValue}
-            placeholder="enter value"
+            placeholder="enter positive, non-zero value"
             style={BalanceRegisterStyle.input}
             placeholderTextColor="#999"/>
 
@@ -118,11 +150,11 @@ export default function BalanceRegister()
             style={BalanceRegisterStyle.input}
             placeholderTextColor="#999"/>
 
-            {
+            {/* {
                 (value && Number(value) <= -1)?
                 <ThemedText style={BalanceRegisterStyle.invalidWarn}>Please enter valid number</ThemedText>
                 :<ThemedText></ThemedText>
-            }
+            } */}
 
             <ThemedView style={{marginVertical:20, width:"50%"}}>
                 <Button title="Select Register Date" color="#a02abd"
@@ -142,8 +174,12 @@ export default function BalanceRegister()
                 <Button title="submit" color = "#a02abd" onPress={handleRegistry}/>
             </ThemedView>
             <ThemedText style={BalanceRegisterStyle.invalidWarn}>{invalidMsg}</ThemedText>
-            <ThemedText type='subtitle'>
+            {/* <ThemedText type='subtitle'>
                 {''}
+            </ThemedText> */}
+            <ThemedText type="subtitle">
+                {(registerResponse != undefined)? registerResponse.message:''}
+                {/* display the booking response message below submit button */}
             </ThemedText>
         </ThemedView>
 

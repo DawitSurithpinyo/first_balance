@@ -17,8 +17,8 @@ collection = db["transactions"]
 @app.route('/get_all_records', methods=['GET'])
 def get_records():
     records = list(collection.find())
-    for rec in records:
-       rec["_id"] = str(rec["_id"])
+    for record in records:
+       record["_id"] = str(record["_id"])
     return jsonify({"all_records": records}), 200
 
 
@@ -42,15 +42,14 @@ def add_record():
       return jsonify({"error": "Invalid Date format. Expected DD-MM-YYYY"}), 400
     
     # Check whether record with the same data (all required fields are the same) already exist
-    exist = False
-    existing = collection.find()
-    for entry in existing:
-       if entry["TransactionName"] == TransactionName and entry["AccountID"] == AccountID and entry["Value"] == Value\
-       and entry["Date"] == Date:
-          exist = True
-    
-    if exist == True:
-       return jsonify({"error": "Record already existed."}), 400
+    existing = collection.find_one({
+      "TransactionName": TransactionName,
+      "AccountID": AccountID,
+      "Value": Value,
+      "Date": Date
+    })
+    if existing:
+      return jsonify({"error": "Record already exists"}), 400
     
     new_record = {
        "TransactionName": TransactionName,
@@ -74,7 +73,7 @@ if __name__ == '__main__':
       "TransactionName": "A",
       "AccountID": "01",
       "Value": -20,
-      "Date": "20-10-2025",
+      "Date": "20-04-2025",
       "Memo": "test1"
    }
    t2 = {

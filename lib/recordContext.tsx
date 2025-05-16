@@ -1,5 +1,4 @@
 import { RecordItem } from '@/interface';
-import { useFocusEffect } from '@react-navigation/native';
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import getRecords from './getRecords';
 
@@ -30,11 +29,11 @@ export default function RecordProvider({children}: {children:React.ReactNode}) {
     // Re-fetch records every time the screen/tab comes into focus (useFocusEffect)
     // which makes sense, because after user submit a new transaction and go back to other tabs i.e., the table tab,
     // the records for table tab will be re-fetched upon arrival, exactly what we want
-    useFocusEffect(
-        useCallback(() => {
-            fetchRecords();
-        }, [fetchRecords])
-    );
+    // useFocusEffect(
+    //     useCallback(() => {
+    //         fetchRecords();
+    //     }, [fetchRecords])
+    // );
 
     return (
         <RecordContext.Provider value={{records, setRecords, fetchRecords}}>
