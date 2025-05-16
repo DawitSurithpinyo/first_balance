@@ -55,7 +55,7 @@ const BalanceRegisterStyle = StyleSheet.create(
         },
         label:{
             fontSize:16,
-            color: "#ebbaf7",
+            color: "#F06292",
             marginVertical:6,
             marginLeft: 4
         },

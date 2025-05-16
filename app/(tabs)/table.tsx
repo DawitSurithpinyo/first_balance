@@ -47,7 +47,7 @@ export default function HomeScreen() {
   const tableData = {
     header: ['Transaction name', 'Account ID', 'Value', 'Date', 'Memo'],
     data: filteredData,
-    widthArr: [0.25*screenWidth, 0.2*screenWidth, 0.15*screenWidth, 0.1*screenWidth, 0.25*screenWidth]
+    widthArr: [0.2*screenWidth, 0.2*screenWidth, 0.15*screenWidth, 0.17*screenWidth, 0.18*screenWidth]
   };
 
   const onDatePicker1Confirm = (params: {date: Date | undefined}) => {
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   phoneRecordTableHeaderText: {
     textAlign: 'center',
     fontWeight: 'bold',
-    fontSize:10
+    fontSize:13
   },
 
   recordTableText: {
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
   phoneRecordTableText: {
     textAlign: 'center',
     fontWeight: '300',
-    fontSize: 10
+    fontSize: 13
   },
 
   recordTableDataCells: {
@@ -408,17 +408,19 @@ const styles = StyleSheet.create({
 
   filtersTitleText: {
     fontWeight: 'bold',
-    fontSize: 22
+    fontSize: 22,
+    textAlign: 'center'
   },
 
   PhonefiltersTitleText: {
     fontWeight: 'bold',
-    fontSize: 15
+    fontSize: 20,
+    textAlign: 'center'
   },
 
   filtersSubtitleText: {
     fontWeight: 'bold',
-    fontSize: 15
+    fontSize: 14
   },
 
   filtersFieldsText: {
@@ -434,7 +436,7 @@ const styles = StyleSheet.create({
   PhonefiltersFieldsText: {
     marginTop: 15,
     fontWeight: '400',
-    fontSize: 10
+    fontSize: 17
   },
 
   textinputbox: {
@@ -442,7 +444,7 @@ const styles = StyleSheet.create({
   },
 
   Phonetextinputbox: {
-    fontSize : 8
+    fontSize : 15
   }
 
 });

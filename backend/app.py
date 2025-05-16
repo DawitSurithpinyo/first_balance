@@ -66,22 +66,4 @@ def add_record():
 # May add upDate and delete later
 
 if __name__ == '__main__':
-   # Test database
-   if len(list(collection.find())) > 0:
-      result = collection.delete_many({})
-   t1 = {
-      "TransactionName": "A",
-      "AccountID": "01",
-      "Value": -20,
-      "Date": "20-04-2025",
-      "Memo": "test1"
-   }
-   t2 = {
-      "TransactionName": "B",
-      "AccountID": "02",
-      "Value": 50,
-      "Date": "01-05-2025",
-   }
-   result = collection.insert_many([t1, t2])
-
    app.run(host='0.0.0.0', port=5000)

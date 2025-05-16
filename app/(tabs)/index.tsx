@@ -165,7 +165,8 @@ const styles = StyleSheet.create({
   balanceText: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: 'white'
+    color: 'white',
+    textAlign: 'center'
   },
 
   EarnedSpentContainer: {
