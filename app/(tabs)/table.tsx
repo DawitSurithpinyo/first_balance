@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
-import { Button, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { DatePickerModal } from "react-native-paper-dates";
-import { Row, Table } from 'react-native-table-component';
-
 import { RecordItem } from '@/interface';
 import { useRecordContext } from '@/lib/recordContext';
+import React, { useState } from 'react';
+import { Button, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { TextInput } from 'react-native-paper';
+import { DatePickerModal } from "react-native-paper-dates";
+import { Row, Table } from 'react-native-table-component';
 
 export default function HomeScreen() {
   const {width: screenWidth} = useWindowDimensions();
   const {records: listOfRecords, setRecords: setListOfRecords} = useRecordContext();
   const [showDatePicker1, setShowDatePicker1] = useState(false);
   const [showDatePicker2, setShowDatePicker2] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
 
   const tableData = {
     header: ['Transaction name', 'Account ID', 'Value', 'Date', 'Memo'],
@@ -60,38 +60,42 @@ export default function HomeScreen() {
     <View style={styles.mainContainer}>
 
       {/* filters */}
-      <View style={styles.filtersContainer}>
-        <Text style={styles.filtersTitleText}>Filter transactions by fields</Text>
-        <Text style={styles.filtersFieldsText}>Transaction name</Text>
+      <View style={[styles.filtersContainer,{display:showSidebar?'flex':'none'}]}>
+        <Text style={screenWidth>=576?styles.filtersTitleText:styles.PhonefiltersTitleText}>Filter transactions by fields</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Transaction name</Text>
         <TextInput
           placeholder='Enter a substring to search for'
           autoCorrect={false}
           value={filters.transactionName}
           onChangeText={(text) => setFilters({ ...filters, transactionName: text })}
+          style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
 
-        <Text style={styles.filtersFieldsText}>Account ID</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Account ID</Text>
         <TextInput
           placeholder='Enter a substring to search for'
           autoCorrect={false}
           value={filters.accountID}
           onChangeText={(text) => setFilters({ ...filters, accountID: text })}
+          style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
 
-        <Text style={styles.filtersFieldsText}>Minimum value</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Minimum value</Text>
         <TextInput
           placeholder='Enter a number'
           value={filters.minValue}
           onChangeText={(text) => setFilters({ ...filters, minValue: text })} // convert to number later
+          style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
-        <Text style={styles.filtersFieldsText}>Maximum value</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Maximum value</Text>
         <TextInput
           placeholder='Enter a number'
           value={filters.maxValue}
           onChangeText={(text) => setFilters({ ...filters, maxValue: text })} // convert to number later
+          style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
 
-        <Text style={styles.filtersFieldsText}>Start date</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Start date</Text>
         <Button title="Select start date"
           color='#F48FB1'
           onPress={()=>{setShowDatePicker1(true)}}/>
@@ -104,7 +108,7 @@ export default function HomeScreen() {
           placeholder='Starting date'
           onConfirm={onDatePicker1Confirm}
         />
-        <Text style={styles.filtersFieldsText}>End date</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>End date</Text>
         <Button title="Select end date"
           color='#F48FB1'
           onPress={()=>{setShowDatePicker2(true)}}/>
@@ -118,18 +122,19 @@ export default function HomeScreen() {
           onConfirm={onDatePicker2Confirm}
         />
 
-        <Text style={styles.filtersFieldsText}>Memo</Text>
+        <Text style={screenWidth>=576?styles.filtersFieldsText:styles.PhonefiltersFieldsText}>Memo</Text>
         <TextInput
           placeholder='Enter a substring to search for'
           autoCorrect={false}
           value={filters.memo}
           onChangeText={(text) => setFilters({ ...filters, memo: text })}
+          style={screenWidth>=576?styles.textinputbox:styles.Phonetextinputbox}
         />
 
         <View style={{padding: 10}}>
         <Button title="Confirm filter"
           color='darkorchid'
-          onPress={() => {handleFilterSubmit()}}
+          onPress={() => {handleFilterSubmit(),setShowSidebar(false)}}
         />
         </View>
       </View>
@@ -138,8 +143,14 @@ export default function HomeScreen() {
       <View style={styles.recordTableContainer}>
         <ScrollView horizontal={true}>
           <View>
+            <View style={{padding: 10}}>
+              <Button title="modify filter"
+                color='darkorchid'
+                onPress={() => {handleFilterSubmit(),setShowSidebar(true)}}
+                />
+            </View>
             <Table>
-              <Row data={tableData.header} widthArr={tableData.widthArr} style={styles.recordTableHeader} textStyle={styles.recordTableHeaderText}/>
+              <Row data={tableData.header} widthArr={tableData.widthArr} style={styles.recordTableHeader} textStyle={screenWidth>=576?styles.recordTableHeaderText:styles.phoneRecordTableHeaderText}/>
             </Table>
             <ScrollView style={styles.recordTableDataWrapper}>
               <Table>
@@ -149,7 +160,7 @@ export default function HomeScreen() {
                     data={rowData}
                     widthArr={tableData.widthArr}
                     style={styles.recordTableDataCells}
-                    textStyle={styles.recordTableText}
+                    textStyle={screenWidth>=576?styles.recordTableText:styles.phoneRecordTableText}
                   />
                 ))}
               </Table>
@@ -225,7 +236,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between', // Pushes children apart
     alignItems: 'flex-start', // Align items to the top
     padding: 20,
-    width: '100%',
+    width: '300%',
   },
 
   recordTableContainer: {
@@ -243,13 +254,25 @@ const styles = StyleSheet.create({
   recordTableHeaderText: {
     textAlign: 'center',
     fontWeight: 'bold',
-    fontSize: 20
+    fontSize:20
+  },
+
+  phoneRecordTableHeaderText: {
+    textAlign: 'center',
+    fontWeight: 'bold',
+    fontSize:10
   },
 
   recordTableText: {
     textAlign: 'center',
     fontWeight: '300',
     fontSize: 20
+  },
+
+  phoneRecordTableText: {
+    textAlign: 'center',
+    fontWeight: '300',
+    fontSize: 10
   },
 
   recordTableDataCells: {
@@ -268,7 +291,8 @@ const styles = StyleSheet.create({
     marginRight: '7%', // Add space between filters and table
     backgroundColor: 'white',
     padding: 20,
-    margin: -20
+    margin: -20,
+    display : 'flex'
   },
 
   filtersTitleText: {
@@ -276,9 +300,28 @@ const styles = StyleSheet.create({
     fontSize: 22
   },
 
+  PhonefiltersTitleText: {
+    fontWeight: 'bold',
+    fontSize: 15
+  },
+
   filtersFieldsText: {
     marginTop: 15,
     fontWeight: '400',
     fontSize: 17
+  },
+  PhonefiltersFieldsText: {
+    marginTop: 15,
+    fontWeight: '400',
+    fontSize: 10
+  },
+
+  textinputbox: {
+    fontSize : 20
+  },
+
+  Phonetextinputbox: {
+    fontSize : 8
   }
+
 });
