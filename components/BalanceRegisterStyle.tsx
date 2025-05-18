@@ -23,7 +23,7 @@ const BalanceRegisterStyle = StyleSheet.create(
             gap: 16,
             overflow: 'hidden'
         },
-        picker:{
+        pickerDark:{
             height:50,
             borderWidth:1,
             borderColor: "#ebbaf7",
@@ -38,7 +38,22 @@ const BalanceRegisterStyle = StyleSheet.create(
             shadowOpacity: 0.1,
             shadowRadius: 4
         },
-        input: {
+        pickerLight:{
+            height:50,
+            borderWidth:1,
+            borderColor: "#7e4da3",
+            borderRadius: 12,
+            paddingHorizontal: 10,
+            backgroundColor : '#e3e5e6',
+            fontSize:16,
+            color: '#7e4da3',
+            elevation : 2,
+            shadowColor : "#000",
+            shadowOffset: {width: 0, height:2},
+            shadowOpacity: 0.1,
+            shadowRadius: 4
+        },
+        inputDark: {
             height:50,
             borderWidth:1,
             borderColor: "#ebbaf7",
@@ -47,6 +62,21 @@ const BalanceRegisterStyle = StyleSheet.create(
             backgroundColor : '#212121',
             fontSize:16,
             color: '#ebbaf7',
+            elevation : 2,
+            shadowColor : "#000",
+            shadowOffset: {width: 0, height:2},
+            shadowOpacity: 0.1,
+            shadowRadius: 4
+        },
+        inputLight: {
+            height:50,
+            borderWidth:1,
+            borderColor: "#7e4da3",
+            borderRadius: 12,
+            paddingHorizontal: 10,
+            backgroundColor : '#e3e5e6',
+            fontSize:16,
+            color: '#7e4da3',
             elevation : 2,
             shadowColor : "#000",
             shadowOffset: {width: 0, height:2},
