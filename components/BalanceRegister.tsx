@@ -2,18 +2,20 @@ import { RecordItem, RecordResponseJson } from "@/interface"
 import addRecord from "@/lib/addRecord"
 import { Picker } from "@react-native-picker/picker"
 import { format } from "date-fns"
-import { useState } from "react"
+import { useFocusEffect } from 'expo-router'
+import { useCallback, useState } from "react"
 import { Button, TextInput, useWindowDimensions } from "react-native"
 import { DatePickerModal } from "react-native-paper-dates"
 import BalanceRegisterStyle from "./BalanceRegisterStyle"
 import { ThemedText } from "./ThemedText"
 import { ThemedView } from "./ThemedView"
 
+
 import { useRecordContext } from "@/lib/recordContext"
 
 export default function BalanceRegister()
 {
-    const {fetchRecords} = useRecordContext();
+    const {records: listOfRecords, setRecords: setListOfRecords, fetchRecords} = useRecordContext();
 
     const SM_SCREEN = 576
     const {height, width} = useWindowDimensions()
@@ -28,6 +30,13 @@ export default function BalanceRegister()
     const [invalidMsg, setInvalidMsg] = useState('')
     // const [val, setVal] = useState(Number())
     const [registerResponse, setRegisterResponse] = useState<RecordResponseJson|undefined>(undefined)
+
+    // use useFocusEffect on individual pages instead of in recordContext.tsx
+    useFocusEffect(
+    useCallback(() => {
+        fetchRecords();
+    }, [fetchRecords])
+    );
 
 
     const handleRegistry = async () => {
@@ -125,7 +134,7 @@ export default function BalanceRegister()
             </Picker>
             <ThemedText style={BalanceRegisterStyle.label}>Account ID: </ThemedText>
             <TextInput value={accountID} onChangeText={setAccountID}
-            placeholder="enter email address"
+            placeholder="enter email address or other ID"
             style={BalanceRegisterStyle.input}
             placeholderTextColor="#999"
             keyboardType="email-address"

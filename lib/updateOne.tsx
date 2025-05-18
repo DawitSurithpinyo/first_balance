@@ -1,10 +1,10 @@
 import { RecordItem, RecordResponseJson } from "@/interface";
 import { Platform } from "react-native";
 
-export default function addRecord({recItem, setResponse}:
-    {recItem:RecordItem, setResponse:Function}
+export default function updateRecord({originalRec, newRec, setResponse}:
+    {originalRec:RecordItem, newRec:RecordItem, setResponse:Function}
 ) {
-    const postRecord = async() => {
+    const updateARecord = async() => {
         try {
             // if npm run android, will need to run with your computer's local IP,
             // which you can get by: when running npm run android, there will be a link like this:
@@ -19,17 +19,26 @@ export default function addRecord({recItem, setResponse}:
                 link = `http://${ip}:5000`
             }
                         
-            const response = await fetch(`${link}/add_record`, {
-                method: 'POST',
+            const response = await fetch(`${link}/update_one`, {
+                method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    TransactionName: recItem.TransactionName,
-                    AccountID: recItem.AccountID,
-                    Value: recItem.Value,
-                    Date: recItem.Date,
-                    Memo: recItem.Memo
+                    original: {
+                        TransactionName: originalRec.TransactionName,
+                        AccountID: originalRec.AccountID,
+                        Value: originalRec.Value,
+                        Date: originalRec.Date,
+                        Memo: originalRec.Memo
+                    },
+                    newData: {
+                        TransactionName: newRec.TransactionName,
+                        AccountID: newRec.AccountID,
+                        Value: newRec.Value,
+                        Date: newRec.Date,
+                        Memo: newRec.Memo
+                    }
                 })
             })
             if(response.ok){
@@ -38,9 +47,9 @@ export default function addRecord({recItem, setResponse}:
             }
         }
         catch (error) {
-            console.error('Error posting data: ', error);
+            console.error('Error updating data: ', error);
         }
     };
 
-    postRecord();
+    updateARecord();
 }
