@@ -900,7 +900,7 @@ const styles = StyleSheet.create({
 
   recordTableText: {
     textAlign: 'center',
-    fontWeight: '300',
+    fontWeight: '500',
     fontSize: 20
   },
 
