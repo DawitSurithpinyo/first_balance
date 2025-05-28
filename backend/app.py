@@ -3,11 +3,12 @@ from datetime import datetime
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+# we do not have other web domains that need to interact with, so maybe CORS is not needed here?
 from pymongo import MongoClient
 
 app = Flask(__name__)
 CORS(app)
-client = MongoClient("mongodb+srv://kritavorn:VxNGxiE9v364dtKU@cluster0.cojpnwm.mongodb.net/")
+client = MongoClient("mongodb+srv://<db_username>:<db_password>@cluster0.cojpnwm.mongodb.net/")
 db = client["transactionsDB"]
 collection = db["transactions"]
 
