@@ -13,4 +13,6 @@ This is only a project for an introductory application development class, and it
 ## Logs
 *Update 21/06/2025*: After the authors' application development class has ended, this project had been untouched until about a week ago, when [DawitSurithpinyo](https://github.com/DawitSurithpinyo) picked it up again as a personal passion project to learn more about back-end development, webapp security, and fullstack in general. I (DawitSurithpinyo) just added login and logout via Google OAuth 2.0, so now more than one person can use the webapp.
 
-- API endpoints for Google OAuth login/logout, and login and logout pages (barebone, no UI yet), has been added into the back-end.
+- Added Google OAuth login/logout system ([@react-oauth/google](https://www.npmjs.com/package/@react-oauth/google) for front-end/client-side authentication + additional Flask API endpoints for retrieving tokens and other credentials).
+- For front-end, the login and logout pages have been created, but with barebone UI for now.
+- Each user's data is kept in a dedicated MongoDB collection named after their email.
