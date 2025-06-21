@@ -36,4 +36,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+flask_session/
+
+# personal note
+# Ignore "others" folder and everything else inside
+others/
+
 app-example

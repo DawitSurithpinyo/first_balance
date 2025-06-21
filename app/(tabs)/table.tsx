@@ -118,6 +118,11 @@ export default function HomeScreen() {
       return
     }
 
+    // if there is no data, we probably should not do anything. It can invoke errors and things
+    if(!defaultData || defaultData.length == 0){
+      return
+    }
+
     const regexTransactionName = new RegExp(customFilters.transactionName.toLowerCase())
     const regexAccountID = new RegExp(customFilters.accountID.toLowerCase())
     const regexMemo = new RegExp(customFilters.memo.toLowerCase())
@@ -137,7 +142,7 @@ export default function HomeScreen() {
         validCount += 1
       }
       // Since memo is optional, it can be undefined, which throws error if try to use .toLowerCase() on it
-      // just let it be an empty string I guess?
+      // just let it be an empty string before checking I guess?
       if(defaultData[i][4] === undefined){
         defaultData[i][4] = ''
       }
@@ -150,7 +155,7 @@ export default function HomeScreen() {
       }
 
       const [day, month, year] = (defaultData[i][3] as string).split('-').map(Number);
-      const recordDate = new Date(year, month - 1, day);
+      const recordDate = new Date(year, month - 1, day); // Months are 0-indexed in JS
       let dateValid = true;
       if (customFilters.startDate) {
         dateValid = dateValid && recordDate >= customFilters.startDate;
@@ -323,7 +328,6 @@ export default function HomeScreen() {
         Memo: newMemo
       };
 
-      // Await the updateRecord call
       await updateRecord({
         originalRec: originalRecord,
         newRec: newRecord,

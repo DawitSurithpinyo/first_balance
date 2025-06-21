@@ -3,12 +3,14 @@ import { useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { RecordItem } from '@/interface';
+import { useCredentialContext } from '@/lib/credentialsContext';
 import { useRecordContext } from '@/lib/recordContext';
 import { ImageBackground } from 'expo-image';
 
 export default function TabTwoScreen() {
   const {records: listOfRecords, setRecords: setListOfRecords, fetchRecords} = useRecordContext();
-
+  const {credentials:credentials, isAuthenticated:isAuthenticated, login:login} = useCredentialContext();
+  
   // use useFocusEffect on individual pages instead of in recordContext.tsx
   useFocusEffect(
     useCallback(() => {
@@ -124,6 +126,7 @@ export default function TabTwoScreen() {
 
       <View style={styles.balanceContainer}>
         <Text style={styles.balanceText}>Your balance: {Balance}</Text>
+        <Text style={{'color':'white'}}>{JSON.stringify(credentials)}</Text>
       </View>
       <View style={styles.EarnedSpentContainer}>
         <View style={styles.earnedSpentBox}>

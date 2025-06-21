@@ -13,7 +13,7 @@ export default function addRecord({recItem, setResponse}:
             const ip = "192.168.212.237"
             var link = "";
             if(Platform.OS === 'web'){
-                link = "http://127.0.0.1:5000"
+                link = "http://localhost:5000"
             }
             else if(Platform.OS === 'android'){
                 link = `http://${ip}:5000`
@@ -24,6 +24,7 @@ export default function addRecord({recItem, setResponse}:
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     TransactionName: recItem.TransactionName,
                     AccountID: recItem.AccountID,
