@@ -24,18 +24,20 @@ export default function RootLayout() {
   return (
     // put GoogleOAuthProvider on outermost, so the Google OAuth flow works properly
     <GoogleOAuthProvider clientId='1081957400734-gd6krhrfpapk4063derrrfc7pibu0mm1.apps.googleusercontent.com'>
-    <CredentialProvider>
-    <RecordProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
-    </RecordProvider>
-    </CredentialProvider>
+      <CredentialProvider>
+        <RecordProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="signIn" options={{ headerShown: false }} />
+              <Stack.Screen name="signUp" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </RecordProvider>
+      </CredentialProvider>
     </GoogleOAuthProvider>
   );
 }

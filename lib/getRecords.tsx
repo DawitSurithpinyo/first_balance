@@ -1,7 +1,7 @@
 import { RecordJson } from "@/interface";
 import { Platform } from "react-native";
 
-export default function getRecords({setRecordsData}: {setRecordsData:Function}) {
+export default function getRecords({setRecordsData, userEmail}: {setRecordsData:Function, userEmail:string}) {
     const fetchRecords = async() => {
         try{
             // if npm run android, will need to run with your computer's local IP,
@@ -18,10 +18,17 @@ export default function getRecords({setRecordsData}: {setRecordsData:Function}) 
             }
 
             const response = await fetch(`${link}/get_all_records`, {
-                method: 'GET',
+                // If we need to pass a body to back-end, we cannot use GET
+                // even though it feels more fitting to use GET
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
+                body: JSON.stringify({
+                    Email: userEmail.valueOf()
+                    // Need the .valueOf()
+                    // See https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable
+                }),
                 credentials: 'include'
             })
 

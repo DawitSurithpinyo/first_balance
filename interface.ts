@@ -39,7 +39,7 @@ export interface userCredentials {
     ClientID?: string,
     GrantedScopes?: string[],
     Salt?: string, // for manual sign-in/sign-up
-    HashedSaltedPassword?: string // for manual sign-in/sign-up
+    HashedPassword?: string // for manual sign-in/sign-up
 }
 // when user hasn't logged in yet or logged out, the credentialsContext that keeps userCredentials will be
 // {'UserEmail': '', 'UserName': ''}

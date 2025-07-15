@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta
 from secrets import token_hex
 
+import argon2
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
@@ -45,7 +46,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='None',
     SESSION_COOKIE_NAME='fb_session',
-    SESSION_COOKIE_SECURE=False
+    SESSION_COOKIE_SECURE=False # Must be False when running on HTTP
 )
 
 CORS(app, 
@@ -65,6 +66,9 @@ credDB = client['userCredsDB']
 credCollection = credDB['credCollection']
 userDataDB = client['userDataDB']
 
+# Using the default parameters. Just hard-coding them so they don't cause error when argon2-cffi updates the default parameters and I don't notice
+passwordHasher = argon2.PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, type=argon2.Type.ID)
+ARGON2_PARAMS = "$argon2id$v=19$m=65536,t=3,p=4$"
 
 
 # Let the Google OAuth library in the front-end handle login on client side and generating state and code
@@ -111,17 +115,17 @@ def googleOAuthCallback():
    # get user data
    # Mostly from this https://stackoverflow.com/a/7138474, adapted from curl to Python requests
    # and https://stackoverflow.com/a/5518085
-   user_data = requests.get(
-         "https://www.googleapis.com/oauth2/v2/userinfo", 
-         params={'fields': 'id,email,name,picture'},
-         headers={'Authorization': f'Bearer {credentials.token}'}
-      ).json()
-   
-   # Store as least additional data into cookie as possible
-   session['user_email'] = user_data['email']
-   session['user_id'] = user_data['id']
+   try:
+      user_data = requests.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo", 
+            params={'fields': 'id,email,name,picture'},
+            headers={'Authorization': f'Bearer {credentials.token}'},
+            timeout=10
+         ).json()
+   except requests.exceptions.Timeout:
+      return jsonify({"error": "Request for user's info timed out"}), 408
 
-   # Save session explicitly to retain user_email
+   # Save session explicitly to retain user_email until logout
    session.modified = True
    session.permanent = True
    
@@ -149,6 +153,7 @@ def googleOAuthCallback():
             "UserEmail": findOneRes['UserEmail']
          },
          { '$set': {
+            "UserName": user_data['name'],
             "UserID": user_data['id'],
             "UserPicture": user_data['picture'],
             "Token": credentials.token,
@@ -166,7 +171,11 @@ def googleOAuthCallback():
       # Don't forget to do this when user login for first time ever by manual sign-up as well
       user_data_collection.insert_one({"Initialized": True})
 
-   return jsonify(cred), 201
+   # Store as least additional data into cookie as possible
+   session['user_email'] = user_data['email']
+   session['user_id'] = user_data['id']
+
+   return jsonify(cred), 200
 
 
 @app.route('/debug/session')
@@ -180,19 +189,94 @@ def debug_cookies():
    return jsonify(request.cookies), 200
 
 
+
+@app.route('/auth/signIn', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def signIn():
+   data = request.get_json()
+   email = data.get('Email')
+   password = data.get('Password')
+
+   # TODO: check input for NoSQL injection
+
+   exists = credCollection.find_one({"UserEmail": email})
+   if not exists:
+      return jsonify({"error": "This user doesn't exist. Please sign up first to create a password, or login by Google."}), 404
+   
+   # Check password
+   try:
+      salt = exists['Salt']
+      hashedPW = exists['HashedPassword']
+      verify = passwordHasher.verify(ARGON2_PARAMS + "$".join([salt, hashedPW]), password)
+      if verify:
+         session['user_email'] = email
+         cred = {
+            "UserEmail": email,
+            "UserName": exists['UserName']
+         }
+         return jsonify(cred), 200
+      
+   except argon2.exceptions.VerifyMismatchError:
+      return jsonify({"error": "Username or password is incorrect"}), 401
+   except Exception as e:
+      return jsonify({'error': e}), 500
+   
+
+@app.route('/auth/signUp', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def signUp():
+   data = request.get_json()
+   email = data.get('Email')
+   name = data.get('Name')
+   password = data.get('Password')
+
+   exists = credCollection.find_one({"UserEmail": email})
+   if exists:
+      return jsonify({"error": "User with this email already exists."}), 409
+   
+   # TODO: check input for NoSQL injection
+
+   try:
+      # Stuffs in the string returned from passwordHasher.hash(): https://stackoverflow.com/a/58431975
+      result = passwordHasher.hash(password)
+      salt, hashedPw = result[31:].split("$")
+      
+      cred = {
+         "UserEmail": email,
+         "UserName": name,
+         "Salt": salt,
+         "HashedPassword": hashedPw
+      }
+      insertResult = credCollection.insert_one(cred)
+      return jsonify({"message": "User added successfully"}), 201
+   except Exception as e:
+      return jsonify({"error": e}), 500
+   
+
 # https://stackoverflow.com/q/3521290
 @app.route('/logout', methods=['POST'])
 @cross_origin(supports_credentials=True)
 def logout():
+   # Just in rare case the user info/logout page is somehow accessible without logging in first
+   # By ProtectedRoute in front-end, this shouldn't happen, but who knows
+   if 'user_email' not in session:
+      redirect('/')
+      return jsonify({"error": "User not authenticated"}), 401
+   
    # remove user details from session
    [session.pop(key) for key in list(session.keys())]
    return "Logged out successfully", 200
 
 
 # re-fetch records every time a page come into focus (useFocusEffect in front-end) by loading them from the database
-@app.route('/get_all_records', methods=['GET'])
+@app.route('/get_all_records', methods=['GET', 'POST'])
 @cross_origin(supports_credentials=True)
 def get_records():
+    print(session)
+   #  data = request.get_json()
+   #  email = data.get("Email")
+   #  print(email)
+
     if 'user_email' not in session:
        return jsonify({"error": "User not authenticated"}), 401
     
@@ -201,9 +285,11 @@ def get_records():
       # DON'T include the {'Initialized': true} document in records. It's not actual user data and front-end logic only handles documents with RecordItem interface.
       # Put simply, get all documents (which have no 'Initialized' field) except the {'Initialized': true} one.
       records = list(userDataDB[session['user_email']].find({'Initialized': {'$exists': False}}))
+      # records = list(userDataDB[email].find({'Initialized': {'$exists': False}}))
       for record in records:
          record["_id"] = str(record["_id"])
     except Exception as e:
+       print(e)
        return jsonify({"error": str(e)}), 500
        
     return jsonify({"all_records": records}), 200
@@ -342,13 +428,10 @@ def delete_many():
       result = userDataDB[session['user_email']].delete_many(query)
 
       # Finally, convert date of remaining documents back to "DD-MM-YYYY"
-      try:
-         all_remaining = userDataDB[session['user_email']].find({})
-         for rec in all_remaining:
-            rec["Date"] = _to_DD_MM_YYYY(rec["Date"])
-            userDataDB[session['user_email']].update_one({"_id": rec["_id"]}, {"$set": {"Date": rec["Date"]}})
-      except Exception:
-         pass
+      all_remaining = userDataDB[session['user_email']].find({})
+      for rec in all_remaining:
+         rec["Date"] = _to_DD_MM_YYYY(rec["Date"])
+         userDataDB[session['user_email']].update_one({"_id": rec["_id"]}, {"$set": {"Date": rec["Date"]}})
    
    except Exception as e:
       app.logger.error(f"Delete many failed: {str(e)}")
@@ -382,6 +465,16 @@ def update_one():
    newDate = new.get("Date")
    newMemo = new.get("Memo")
 
+   checkDup = userDataDB[session['user_email']].find_one({
+      "TransactionName": newTransactionName,
+      "AccountID": newAccountID,
+      "Value": newValue,
+      "Date": newDate,
+      "Memo": newMemo
+   })
+   if checkDup:
+      return jsonify({"error": "A record with the exact same data already exists"}), 400
+
    result = userDataDB[session['user_email']].update_one(
       {
          "TransactionName": originalTransactionName,
@@ -413,4 +506,4 @@ if __name__ == '__main__':
    # If users only grant partial request, the warning would not be thrown.
    os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
-   app.run(host='0.0.0.0', port=5000, debug=True)
+   app.run(port=5000)

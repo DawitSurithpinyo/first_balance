@@ -18,11 +18,11 @@ export default function Login() {
 
 
     function handleSignIn() {
-
+        router.replace("/signIn")
     }
 
     function handleSignUp() {
-
+        router.replace("/signUp")
     }
     return(
         <View>
