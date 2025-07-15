@@ -1,28 +1,24 @@
-import { useCredentialContext } from "@/lib/credentialsContext";
-import processSignUp from "@/lib/processSignup";
-import { router } from "expo-router";
+import { useCredentialContext } from "@/frontend/lib/credentialsContext";
+import processSignIn from "@/frontend/lib/processSignIn";
+import { Link, router } from "expo-router";
 import { useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { TextInput } from "react-native-paper";
 
-export default function SignUp() {
-    var zxcvbn = require('zxcvbn');
+export default function SignIn() {
     const {login:login} = useCredentialContext()
     const [inputEmail, setInputEmail] = useState("")
-    const [inputName, setInputName] = useState("")
     const [inputPW, setInputPW] = useState("")
     const [invalidMsg, setInvalidMsg] = useState("")
-    const [signUpResponse, setSignUpResponse] = useState<string|undefined>(undefined)
+    const [signInResponse, setSignInResponse] = useState<string|undefined>(undefined)
 
-    const handleSignUp = async() => {
+    const signUpLink = <Link href={"/signUp"}>sign up</Link>
+
+    const handleSignIn = async() => {
         let localInvalidMsg = ''
         let isValid = true
         if(!inputEmail || inputEmail.trim() === ''){
             localInvalidMsg = "Please enter an email"
-            isValid = false
-        }
-        if(!inputName || inputName.trim() === ''){
-            localInvalidMsg = "Username must be at least 1 character long"
             isValid = false
         }
         // basic email validation
@@ -43,13 +39,18 @@ export default function SignUp() {
             return
         }
 
-        processSignUp({
-            userEmail: inputEmail,
-            userName: inputName,
-            userPassword: inputPW,
-            setSignUpResponse: setSignUpResponse,
-            login: login
-        })
+        try{
+            processSignIn({
+                userEmail: inputEmail, 
+                userPassword: inputPW,
+                setSignInResponse: setSignInResponse,
+                login: login
+            })
+        }
+        catch (error){
+            console.log(error)
+        }
+
     }
 
     return(
@@ -64,20 +65,17 @@ export default function SignUp() {
                 keyboardType="email-address"
                 onChangeText={(email) => setInputEmail(email)}
             ></TextInput>
-            <Text style={{'fontSize':14, 'color':'white'}}>Username (at least 1 character)</Text>
-            <TextInput
-                onChangeText={(username) => setInputName(username)}
-            ></TextInput>
             <Text style={{'fontSize':14, 'color':'white'}}>Password</Text>
             <TextInput
                 onChangeText={(pw) => setInputPW(pw)}
             ></TextInput>
+            <Text style={{'fontSize':14, 'color':'white'}}>If you have logged in with Google before but never with manual log in, please {signUpLink} to create a password first.</Text>
 
-            <TouchableOpacity style={{"alignSelf":'center', 'backgroundColor':'gray'}} onPress={handleSignUp}>
-                <Text>Sign up</Text>
+            <TouchableOpacity style={{"alignSelf":'center', 'backgroundColor':'gray'}} onPress={() => {handleSignIn()}}>
+                <Text>Sign in</Text>
             </TouchableOpacity>
             <Text style={{'fontSize':14, 'color':'white'}}>{invalidMsg}</Text>
-            <Text style={{'fontSize':14, 'color':'white'}}>{signUpResponse}</Text>
+            <Text style={{'fontSize':14, 'color':'white'}}>{signInResponse}</Text>
         </View>
     )
 }

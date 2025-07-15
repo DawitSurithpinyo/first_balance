@@ -1,5 +1,5 @@
+import addRecord from "@/frontend/lib/addRecord"
 import { RecordItem, RecordResponseJson } from "@/interface"
-import addRecord from "@/lib/addRecord"
 import { Picker } from "@react-native-picker/picker"
 import { format } from "date-fns"
 import { useFocusEffect } from 'expo-router'
@@ -10,7 +10,7 @@ import BalanceRegisterStyle from "./BalanceRegisterStyle"
 import { ThemedText } from "./ThemedText"
 import { ThemedView } from "./ThemedView"
 
-import { useRecordContext } from "@/lib/recordContext"
+import { useRecordContext } from "@/frontend/lib/recordContext"
 
 export default function BalanceRegister()
 {

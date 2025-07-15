@@ -41,7 +41,7 @@ flask_session/
 
 # personal note
 # Ignore "others" folder and everything else inside
-others/
+notes/
 
 app-example
 

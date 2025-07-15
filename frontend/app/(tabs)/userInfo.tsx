@@ -1,5 +1,5 @@
-import { useCredentialContext } from "@/lib/credentialsContext";
-import processLogout from "@/lib/processLogout";
+import { useCredentialContext } from "@/frontend/lib/credentialsContext";
+import processLogout from "@/frontend/lib/processLogout";
 import { Text, TouchableOpacity, View } from "react-native";
 
 export default function userInfo() {

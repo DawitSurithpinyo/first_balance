@@ -1,4 +1,4 @@
-import { useCredentialContext } from "@/lib/credentialsContext";
+import { useCredentialContext } from "@/frontend/lib/credentialsContext";
 import { Redirect } from "expo-router";
 
 export function ProtectedRoute({children}: {children:React.ReactNode}) {
