@@ -39,7 +39,7 @@ yarn-error.*
 
 flask_session/
 .venv/
-.vscode/
+.vscode
 
 # personal note
 notes/
