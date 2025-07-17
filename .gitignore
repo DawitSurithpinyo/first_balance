@@ -38,11 +38,11 @@ yarn-error.*
 *.tsbuildinfo
 
 flask_session/
+.venv/
+.vscode/
 
 # personal note
-# Ignore "others" folder and everything else inside
 notes/
-
-app-example
-
-backend/others/testargon2.py
+# Ignore "others" folder and everything else inside
+backend/others/
+__pycache__
