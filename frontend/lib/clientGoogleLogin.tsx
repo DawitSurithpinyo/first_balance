@@ -15,7 +15,10 @@ export default function clientGoogleLogin(
                     link = `http://${ip}:5000`
                 }
 
-                const response = await fetch(`${link}/auth/google_login`, {
+                console.log(code)
+                console.log(state)
+
+                const response = await fetch(`${link}/api/auth/googleLogin`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

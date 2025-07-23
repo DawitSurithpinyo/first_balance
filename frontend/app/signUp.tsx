@@ -1,5 +1,5 @@
-import { useCredentialContext } from "@/frontend/lib/credentialsContext";
-import processSignUp from "@/frontend/lib/processSignup";
+import { useCredentialContext } from "@/lib/credentialsContext";
+import processSignUp from "@/lib/processSignup";
 import { router } from "expo-router";
 import { useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";

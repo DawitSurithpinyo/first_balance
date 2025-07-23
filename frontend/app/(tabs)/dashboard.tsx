@@ -2,9 +2,9 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { useCredentialContext } from '@/frontend/lib/credentialsContext';
-import { useRecordContext } from '@/frontend/lib/recordContext';
 import { RecordItem } from '@/interface';
+import { useCredentialContext } from '@/lib/credentialsContext';
+import { useRecordContext } from '@/lib/recordContext';
 import { ImageBackground } from 'expo-image';
 
 export default function TabTwoScreen() {

@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from flask import abort, jsonify, request
+from flask import jsonify, request
 
-allowed = ['auth.google_login', 'test.test_hello']
+allowed = ['authController:googleLogin', 'test.test_hello']
 def authMiddleware():
+    print(request.endpoint)
     if request.endpoint is None:
         # if invalid API route, request.endpoint will be null
         return jsonify({
@@ -13,8 +14,7 @@ def authMiddleware():
         }), 404
     
     if request.endpoint in allowed:
-        # success cases -> return empty
-        # It will automatically go to destination route
+        # Automatically go to destination route if it's not restricted
         return
 
     print("not supposed to be here")

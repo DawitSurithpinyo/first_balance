@@ -1,5 +1,5 @@
-import { useCredentialContext } from "@/frontend/lib/credentialsContext";
 import { userCredentials } from "@/interface";
+import { useCredentialContext } from "@/lib/credentialsContext";
 import { router } from "expo-router";
 import { Text, TouchableOpacity, View } from "react-native";
 import { useGoogleLoginHook } from "../hooks/useGoogleLogin";

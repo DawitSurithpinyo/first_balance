@@ -4,9 +4,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
-import CredentialProvider from '@/frontend/lib/credentialsContext';
-import RecordProvider from '@/frontend/lib/recordContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import CredentialProvider from '@/lib/credentialsContext';
+import RecordProvider from '@/lib/recordContext';
 
 import { GoogleOAuthProvider } from '@react-oauth/google';
 

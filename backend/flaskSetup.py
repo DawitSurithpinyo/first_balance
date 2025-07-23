@@ -1,18 +1,16 @@
 import os
 from datetime import datetime
-from secrets import token_hex
 
 import redis
+from config.flaskConfig import Config
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_caching import Cache
 from flask_cors import CORS
-from flaskConfigs.config import *
-from pymongo import MongoClient
-from src.middleware import authMiddleware
-from src.routes import test
-
 from flask_session import Session
+from pymongo import MongoClient
+from src.controllers.authController import authController
+from src.middleware import authMiddleware
 
 
 def createApp(test_config=None) -> Flask:
@@ -20,7 +18,7 @@ def createApp(test_config=None) -> Flask:
         load_dotenv()
         app = Flask(__name__)
         if test_config is not None:
-            if isinstance(test_config, DevConfig):
+            if issubclass(type(test_config), Config):
                 app.config.from_object(test_config)
             elif isinstance(test_config, dict):
                 app.config.update(test_config)
@@ -43,7 +41,7 @@ def createApp(test_config=None) -> Flask:
         
         with app.app_context():
             __initMiddlewares(app)
-            __initBlueprints(app)
+            __initViews(app)
             app.run(port=5000)
         return app
         
@@ -59,5 +57,6 @@ def createApp(test_config=None) -> Flask:
 def __initMiddlewares(app: Flask) -> None:
     app.before_request(authMiddleware.authMiddleware)
 
-def __initBlueprints(app: Flask) -> None:
-    app.register_blueprint(test.test_bp)
+def __initViews(app: Flask) -> None:
+    URL_PREFIX: str = '/api'
+    authController.register(app, route_base='/auth', route_prefix=URL_PREFIX)

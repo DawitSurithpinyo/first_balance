@@ -1,4 +1,4 @@
-from flaskConfigs.config import DevConfig
+from config.flaskConfig import DevConfig
 from flaskSetup import createApp
 
 config = DevConfig()

@@ -6,7 +6,7 @@ import { HapticTab } from '@/components/HapticTab';
 import { ProtectedRoute } from '@/components/protectedRoute';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/frontend/constants/Colors';
+import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 
