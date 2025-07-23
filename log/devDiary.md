@@ -36,5 +36,9 @@
 
     - Planning to incorporate strict type checking tools i.e., `Pydantic` or `MyPy` in the future.
 
-## 22nd July 2025 - now
-- Incorporate `Pydantic` into back-end code base for strict run-time type checking
+## 22nd July 2025
+- Use `Pydantic` in back-end code base for strict run-time type checking instead of `dataclasses`, which only kind of act as a types documentation without any enforcing.
+
+## 23rd July 2025
+- Completely separated front-end and back-end.
+- Through run-time type checking, found out that Google OAuth authorization on the client side has never actually generated any `state`/CSRF token, and I need to generate one myself. Never caught it before, because the old back-end code had no type checking, and `google_auth_oauthlib.flow.Flow.from_client_secrets_file()` still works with `undefined`/`null` `state`.

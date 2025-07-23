@@ -40,8 +40,6 @@ yarn-error.*
 flask_session/
 .venv/
 
-# personal note
-notes/
 # Ignore "others" folder and everything else inside
 backend/others/
 __pycache__
