@@ -1,3 +1,6 @@
+## Note: all updates (logs and code) are currently on `dev` branch.
+This README and everything else on this branch (`main`) is currently outdated.
+
 # First balance
 
 A simple web application for managing personal finance, allowing you to create, read, update, and delete transactions.
