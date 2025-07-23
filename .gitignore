@@ -33,6 +33,7 @@ yarn-error.*
 # local env files
 .env*.local
 *.env
+.env.*
 
 # typescript
 *.tsbuildinfo
@@ -43,3 +44,6 @@ flask_session/
 # Ignore "others" folder and everything else inside
 backend/others/
 __pycache__
+
+# local git bundle backup
+*.bundle
