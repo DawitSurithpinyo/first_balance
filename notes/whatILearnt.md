@@ -80,11 +80,11 @@ First, a common misconception between singleton and "single instance":
         - Harder to scale. Since it all depends on sessions in the server, too many users or requests can worsen performance. Complex architecture of load balancers/CDN stuffs and caching needs to be implemented.
 
 - Front-end/UI has nothing to do with "stateful" or "stateless." Even if the front-end can "keep" user's selected products in cart via React context (for example), it's just going to disappear once the user close the tab. There is no session on a server to store those information.
-- Note that "stateful" vs "stateless" can be used for network protocols too. For example, HTTP is a stateless application-layer protocol, because it doesn't remember previous requests.
+- Note that "stateful" vs "stateless" can be used for network protocols too. For example, HTTP is a stateless application-layer protocol, because each HTTP requests are independent of each other. For example, request $n$ doesn't know anything about request $n-1$.
 
 ### Multithreading, concurrency, parallelism, and asynchrony
 - "Thread": pretty difficult to explain intuitively or what it means exactly. See answers from https://stackoverflow.com/questions/5201852/what-is-a-thread-really.
-- Concurrency: computer executing $>1$ tasks by quickly switching between them from start to finish, but NOT doing more than one task AT ONCE. A bit like one counter serving two lines of customer; this counter can serve more than one lines of customer, but the cashier CANNOT take more than one person at a time.
+- Concurrency: computer executing $>1$ tasks by quickly switching between them from start to finish, but NOT doing more than one task AT ONCE. A bit like one counter, with one cashier, serving two lines of customer; this counter can serve more than one lines, but the cashier CANNOT take more than one person at a time.
 - Parallelism: computer executing $>1$ tasks by actually doing more than one tasks AT ONCE i.e., multi-core CPUs. A bit like a counter with two cashiers; not only can they serve more than one lines of customer, but they also CAN take more than one customer at a time.
 - Multithreading: One of the possible tools to achieve concurrency. It means spawning more than one threads to execute a program.
 - Asynchrony (like `async`/`await`): With a single thread, task A can be executed without having to wait for task B to be completed. A does its own things while waiting for task B to notify that it has completed its operation.
@@ -98,8 +98,36 @@ First, a common misconception between singleton and "single instance":
     - https://stackoverflow.com/questions/4844637/what-is-the-difference-between-concurrency-parallelism-and-asynchronous-methods
 
 ## Database
-- When to use SQL vs NoSQL
-- What is an ORM?
+### When to use SQL vs NoSQL
+- Generally, when you can map out that the data parts of your application will have some kind of relations or dependencies, and your schema is not super flexible/will not change wildly too often (which is like most of the time), SQL is better.
+- But when you can see that, in your use case, your data will be very flexible:
+    - Significant difference in fields and values when comparing between data points
+    - The number of possible schema is too large, or the schema can often change
+- Then it might be better to use NoSQL. To give an example, consider a situation where we have to keep users' workout data. A user can workout in many days, and each day with potentially different workout types.
+    - If we use SQL, we'd have to keep track of how many possible workout types there are and valid values for each one (which can always be really different between users), normalize them (foreign key to a dedicated workout types table), and do a lot of work on editing schema, tables, and queries when things change.
+        - It would be a nightmare to `join` users table too. Imagine the possible combinations of workout types and values.
+    - In contrast, let's say we use NoSQL and define one collection for one user, one document inside it for one day, and inside it are arbitrary sub-documents of workout types that person did in that day. Essentially nested JSONs.
+    - You'd not have to worry about possible types of workouts and their really flexible schemas, because we are storing workouts as JSON entities that are easy to query (no `join`s needed).
+
+- All in all, I don't feel like this is an easy topic with silver bullets. I think it would require experiences working with many products and use cases to gain intuition whether SQL or NoSQL suits a situation the best. But I presume SQL works for 60% - 80% of real world use cases.
+- Source:
+    - https://sqlinsix.medium.com/when-to-use-sql-or-nosql-b50d4a52c157
+
+### What is an ORM (Object-Relational Mapping) tool?
+- SQL/relational databases are very popular, but as it scales up, with more and more schema definitions and tables, it becomes harder to query and maintain relations.
+- We can use the idea of OOP, where we represent entities as objects with relationships. But to mimic that in SQL DB, we'd have to create a set of tables mimicking objects and their relations, which can be hard.
+- So that's exactly what an ORM tool does for you. We just need to define "Models" (classes with relationships), and the ORM tool will automatically map it to valid SQL tables, relationships, and types. Querying also becomes much easier, as all you need to do are select the right function from the ORM library and supply correct parameters and values to query. The ORM will do `WITH(...) AS xx, SELECT ...` or whatever queries necessary for you.
+    - This can speed up development time.
+    - Come to think about it, MongoDB (ironically NoSQL) interfaces for usage and querying already feels like it's inherently designed to "mimic" ORM.
+- That being said:
+    - It becomes another library/framework to learn.
+    - Some ORM libraries are not optimal i.e., they call `SELECT * FROM table` or other load-heavy queries when not necessary, which can lead to performance issues in large systems. Learning how to write complex SQL queries that are also good and fast is pretty hard, but worth it in the long run.
+    - It is possible that some queries we want to do are so complex that we can't do them through an ORM.
+
+- Sources:
+    - https://www.baeldung.com/cs/object-relational-mapping
+    - https://dev.to/cies/the-case-against-orms-5bh4
+    - Some other articles I lost track of
 
 ## Flask
 - Flask application context
