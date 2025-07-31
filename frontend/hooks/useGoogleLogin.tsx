@@ -9,9 +9,9 @@ export function useGoogleLoginHook(onSuccessCallback?: (cred:userCredentials) =>
     return useGoogleLogin({
         flow: 'auth-code',
         ux_mode: 'popup', // will fall back to 'redirect' if client's browser doesn't allow popup
+        select_account: true,
         onSuccess: async (codeResponse) => {
             try {
-                console.log(codeResponse)
                 // async operation needs await inside, don't forget
                 const cred = await clientGoogleLogin({
                     code: codeResponse.code,

@@ -16,10 +16,11 @@ export default function processLogout() {
                 link = `http://${ip}:5000`
             }
 
-            const response = await fetch(`${link}/logout`, {
+            const response = await fetch(`${link}/api/auth/logout`, {
                     'method': 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        // 'X-CSRF-Token': 
                     },
                     credentials: 'include'
                 }

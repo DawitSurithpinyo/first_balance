@@ -22,7 +22,7 @@
 
     - Flask app factory pattern (adapted from [this official guide](https://flask.palletsprojects.com/en/stable/patterns/appfactories/) and [this blog](https://medium.com/@ferrohardian/application-factory-pattern-starting-your-flask-project-e17dd2f12013)) allows creating different app instances for configuration/testing.
     
-        - The initial idea was to create a class to handle app creation and use as a singleton, but this could be difficult for creating tests with different app configurations in the future.
+        - The initial idea was to create a class to handle app creation and use as a "single instance", but this could be difficult for creating tests with different app configurations in the future.
     - Separating endpoints into layers based on roles allows clearer flows, better testing and error handling, etc.
 
         - middlewares: handle authentication checking to prevent unauthorized access to restricted API endpoints
@@ -42,3 +42,22 @@
 ## 23rd July 2025
 - Completely separated front-end and back-end.
 - Through run-time type checking, found out that Google OAuth authorization on the client side has never actually generated any `state`/CSRF token, and I need to generate one myself. Never caught it before, because the old back-end code had no type checking, and `google_auth_oauthlib.flow.Flow.from_client_secrets_file()` still works with `undefined`/`null` `state`.
+
+## 24th July 2025
+- Found that I actually didn't use Redis for caching, it was local storage. Fixed the configuration. Now both session and cache use Redis.
+- Moved all configurations that doesn't require object instantiation (everything except cache and DB that needs `Redis` and `MongoClient` objects respectively) to the config classes in `config/flaskConfig.py`. This is to ensure proper flows of app and objects instantiation.
+
+    - Now all configurations depends on the class of `config` provided to `createApp()` and `app.run()` instead of hard-coding some of them, making it easier to test with different configs in the future. Similar to [dependency injection](https://en.wikipedia.org/wiki/Dependency_injection).
+
+## 25 - 26 July 2025
+- Solved the no state issue by just generating `state` (CSRF token) on server-side.
+- Found out I don't have to make a separate request to retrieve the user's profile info. I can just use `from googleapiclient.discovery import build`.
+
+    - https://github.com/googleapis/google-api-python-client/blob/main/docs/oauth.md#using-credentials
+    - Actually, after reading the helper functions for `build`, a request onto the internet is made anyway. ...Don't know what I was expecting. I'll keep my original util function for manually fetching user info, it was nice for learning. But I'm not going to use it anymore.
+
+## 27 - 30 July
+- Redis and MongoDB fully working.
+- API route for Google OAuth login route is fully working.
+- Finish implementing CSRF prevention and unauthenticated API access prevention in authMiddleware.
+    - CSRF prevention by [synchronizing token pattern](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#synchronizer-token-pattern).

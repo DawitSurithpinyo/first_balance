@@ -3,8 +3,8 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-CLIENT_SECRETS_FILE = os.getenv('CLIENT_SECRETS_FILE', 'no file')
-SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly', 
-          'https://www.googleapis.com/auth/cloud-platform.read-only',
-          'email', 'profile']
-REDIRECT_URI = 'http://localhost:8081/dashboard'
+DEV_CLIENT_SECRETS_FILE = os.getenv('DEV_CLIENT_SECRETS_FILE', 'no file')
+SCOPES = ['https://www.googleapis.com/auth/userinfo.email', 
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'openid']
+DEV_REDIRECT_URI = 'http://localhost:8081/dashboard'

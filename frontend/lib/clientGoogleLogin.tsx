@@ -15,17 +15,13 @@ export default function clientGoogleLogin(
                     link = `http://${ip}:5000`
                 }
 
-                console.log(code)
-                console.log(state)
-
                 const response = await fetch(`${link}/api/auth/googleLogin`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        code: code,
-                        state: state
+                        code: code
                     }),
                     credentials: 'include'
                 })
@@ -34,7 +30,8 @@ export default function clientGoogleLogin(
                     const errorText = await response.text();
                     throw new Error(`Server error: ${response.status} - ${errorText}`);
                 }
-
+                
+                console.log(response.headers.get('X-CSRF-Token'))
                 return await response.json();
             }
 
