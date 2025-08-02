@@ -1,5 +1,6 @@
 import os
 
+import argon2
 from dotenv import load_dotenv
 from redis import Redis
 

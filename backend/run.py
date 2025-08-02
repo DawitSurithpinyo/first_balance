@@ -1,4 +1,5 @@
-from appSetup import createApp, initAppAddOns, initInfra
+from appSetup import (createApp, initAppAddOns, initInfra, initMiddlewares,
+                      initViews)
 from config.flaskConfig import *
 
 conf = DevConfig
@@ -10,7 +11,11 @@ app = createApp(conf)
 # Set app.config['SESSION_REDIS'] before setting Session, CORS, and Cache
 # to make sure Session point to the right Redis instance
 app.config['SESSION_REDIS'] = sessionRedis
-initAppAddOns(app, conf)
+cache, passwordHasher = initAppAddOns(app, conf)
+
+# Finally, initialize middleware and routes
+initMiddlewares(app)
+initViews(app)
 
 
 if __name__ == "__main__":

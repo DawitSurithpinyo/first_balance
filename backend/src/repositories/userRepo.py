@@ -1,30 +1,22 @@
-from typing import Literal
+from typing import Any, Literal
 
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from pymongo import MongoClient, ReturnDocument
 from redis import Redis
 from src.types.error.AppError import AppError
-from src.types.user.PATCH import userCredentials
 
 
 class userRepository:
-    """
-        When initializing, either 
-        
-        - Don't supply any arguments, and it will use MongoDB and Redis for `Session` from `run.py`.
-            - And use Redis instance internally created by app + `flask_caching`'s decorators for caching.
-        - Or provide all three of them. May be useful for testing.
-    """
     def __init__(self, 
                  mongo: MongoClient | None = None, 
                  redisSession: Redis | None = None,
                  redisCache: Redis | None = None):
         if mongo is None and redisSession is None and redisCache is None:
-            from run import mongoClient, sessionRedis
+            from run import cache, mongoClient, sessionRedis
             self.mongoClient = mongoClient
             self.sessionRedis = sessionRedis
-            self.cacheRedis = None # use flask_caching's decorators
+            self.cacheRedis = cache
         else:
             self.mongoClient = mongo
             self.sessionRedis = redisSession
@@ -35,21 +27,23 @@ class userRepository:
             user, 
             email: str | None = None, 
             OID: ObjectId | str | None = None,
-            returnAs: Literal["whole"] | Literal["id"] | None = "id"
-        ) -> userCredentials | str:
+            projection: dict | None = None
+        ) -> Any:
         """
-            PATCH user credential document. Supply either `email` or `OID` for finding which document to PATCH.
+            PATCH user credentials document. Supply either `email` or `OID` for finding which document to PATCH.
             .. Return either the whole patched document or its `"_id"` (user ID) as string, depending on `returnAs` argument.
-            .. note:: INCOMING FIELDS IN `user` MUST BE DEFINED WITHIN `userCredentials` TYPE.
+            .. note:: INCOMING FIELDS IN `user` MUST BE DEFINED WITHIN `fullUserCredentials` TYPE.
 
-            :param user: `dict` of class :class:`~src.types.user.PATCH.userCredentials` or a subset of it. Equivalent to `Partial<userCredentials>` if it was Typescript.
+            :param user: `dict` of class :class:`~src.types.user.PATCH.fullUserCredentials` or a subset of it. Equivalent to `Partial<fullUserCredentials>` if it was Typescript.
             :param email: user's email address.
             :param OID: user's ID created in MongoDB. Can be either `str` or `bson.objectid.ObjectId`.
-            :param returnAs: Either `"whole"` or `"id"`. If `"whole"`, return the whole patched document from DB. If `"id"`, return only the user's ID (`_id`) as string. Default to `"id"`.
+            :param projection:
+                - Optional. A dict to specify what fields to include or exclude. Return all fields if not specified.
+                Will be passed directly to the `projection` argument of `collection.find_one_and_update()`.
+
+                - NOTE: SHOULD supply fields belonging to `src.types.user.PATCH.fullUserCredentials` type.
         """
-        # try:
-        client = self.mongoClient
-        db = client['userCredsDB']
+        db = self.mongoClient['userCredsDB']
         col = db['credsCollection']
 
         if email is None or email == "" and OID is None:
@@ -72,16 +66,6 @@ class userRepository:
             filterVal = email
             filterField = "userEmail"
 
-        if returnAs not in ["whole", "id"]:
-            raise AppError("""Error from userRepo.patchUserCredentials: Invalid returnAs argument. ' \
-            'Either supply with "whole" or "id", or don't, which defaults to "id".""", 400)
-        
-        proj: dict | None = None
-        if returnAs is None or returnAs == "id":
-            proj = { "_id": True }
-        elif returnAs == "whole":
-            proj = None
-
         result = col.find_one_and_update(
             filter = {
                 filterField: filterVal
@@ -91,13 +75,52 @@ class userRepository:
             },
             upsert = True,
             return_document = ReturnDocument.AFTER,
-            projection = proj
+            projection = projection
         )
 
         if result:
             result["userID"] = str(result.pop("_id"))
         
         return result
+    
+    def getUserCredentials(self, userID: str | None, userEmail: str | None, projection: dict | None = None) -> Any:
+        """
+            Get credentials of a user from database by their `userID` or `userEmail`.
+
+            :param userID: User's ID as string. Must be in format of `bson.objectid.ObjectId`.
+            :param userEmail:
+            :param projection: 
+                - Optional. A dict to specify what fields to include or exclude. Return all fields if not specified.
+                Will be passed directly to the `projection` argument of `collection.find_one()`.
+
+                - NOTE: SHOULD supply fields belonging to `src.types.user.PATCH.fullUserCredentials` type.
+        """
+        db = self.mongoClient['userCredsDB']
+        col = db['credsCollection']
+
+        if userEmail is None and userID is None:
+            raise AppError('Error from userRepo.getUserCredentials: Both userID and userEmail are null, need one of them.', 400)
+
+        filterField: str = ""
+        filterVal: str | ObjectId = ""
+        if userID is not None:
+            filterField = "_id"
+            try:
+                filterVal = ObjectId(userID)
+            except InvalidId:
+                raise AppError('Error from userRepo.getUserCredentials: Invalid userID format.', 400)
+        else:
+            filterField = "userEmail"
+            filterVal = userEmail
+
+        result = col.find_one(
+            filter = {
+                filterField: filterVal
+            },
+            projection = projection
+        )
+
+        if result and hasattr(result, "_id"):
+            result["userID"] = str(result.pop("_id"))
         
-        # except Exception as e:
-        #     print(f'Error from userRepository.patchUserCredentials: {e}')
+        return result

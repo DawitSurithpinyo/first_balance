@@ -31,7 +31,7 @@ export default function clientGoogleLogin(
                     throw new Error(`Server error: ${response.status} - ${errorText}`);
                 }
                 
-                console.log(response.headers.get('X-CSRF-Token'))
+                const csrfToken = response.headers.get('X-CSRF-Token');
                 return await response.json();
             }
 

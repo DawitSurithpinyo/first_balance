@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from argon2 import PasswordHasher
 from config.flaskConfig import *
 from dotenv import load_dotenv
 from flask import Flask, jsonify
@@ -20,9 +21,6 @@ def createApp(config) -> Flask:
         load_dotenv()
         app = Flask(__name__)
         app.config.from_object(config)
-        
-        __initMiddlewares(app)
-        __initViews(app)
         return app
         
     except Exception as e:
@@ -60,19 +58,26 @@ def initInfra(config) -> tuple[Redis, MongoClient]:
     return sessionRedis, mongoClient
 
 
-def initAppAddOns(app: Flask, config) -> None:
+def initAppAddOns(app: Flask, config) -> tuple[Cache, PasswordHasher]:
     """
-        Add Session, CORS, and Cache.
+        Add Session, CORS, Cache, and Argon2 PasswordHasher. Return `cache` and `passwordHasher`.
 
         Please supply config with any classes from `config/flaskConfig.py`, except `BaseConfig`.
     """
     try:
-        Cache(app)
+        cache = Cache(app)
         Session(app)
         if hasattr(config, 'CORS_CONFIGS'):
             CORS(app, **config.CORS_CONFIGS)
         else:
             CORS(app)
+
+        if hasattr(config, 'ARGON2_PARAMS'):
+            passwordHasher = PasswordHasher( **config.ARGON2_PARAMS )
+        else:
+            passwordHasher = PasswordHasher()
+
+        return cache, passwordHasher
     
     except Exception as e:
         print(f"Error while setting up app Session, CORS, and Cache: {e}")
@@ -84,10 +89,10 @@ def initAppAddOns(app: Flask, config) -> None:
             }), 500
 
 
-def __initMiddlewares(app: Flask) -> None:
+def initMiddlewares(app: Flask) -> None:
     app.before_request(authMiddleware.authMiddleware)
 
 
-def __initViews(app: Flask) -> None:
+def initViews(app: Flask) -> None:
     URL_PREFIX: str = '/api'
     authController.register(app, route_base='/auth', route_prefix=URL_PREFIX)

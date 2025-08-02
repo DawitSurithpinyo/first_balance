@@ -2,20 +2,25 @@ from datetime import datetime
 
 from flask import jsonify, request, session
 from src.types.error.AppError import AppError
+from src.utils.checkSessionType import checkSessionType
 
-allowed = ['authController:googleLogin']
+# some endpoints are public or handle credential checking on their own
+whiteList = ['authController:getCredentials']
+
 def authMiddleware():
     try:
         if request.endpoint is None:
             # if invalid API route, request.endpoint will be null
             raise AppError("API route not found.", 404)
         
-        if request.endpoint in allowed:
-            # Automatically go to destination route if it's not restricted
+        if request.endpoint in whiteList:
+            # Automatically go to destination route if it's in whiteList
             return
         
-        if session is None or 'userID' not in session.keys():
-            # Authenticated users should have server-side session with userID
+        sessionType = checkSessionType(dict(session))
+        if sessionType == "unknown":
+            # Authenticated users should have server-side session
+            # Even when they are not logged in yet, server should've established a pre-login session with login CSRF token already
             raise AppError("User is unauthenticated.", 401)
 
         if request.method not in ['GET', 'HEAD', 'OPTIONS']:

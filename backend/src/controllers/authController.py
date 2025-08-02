@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from flask import after_this_request, jsonify, request, session
+from flask import after_this_request, jsonify, redirect, request, session
 from flask_classful import FlaskView, route
 from pydantic import ValidationError
-from src.types.auth.POST import googleLoginRequest
+from src.types.auth.POST import googleLoginRequest, manualSignInRequest
 from src.types.error.AppError import AppError
 from src.types.user.PATCH import userCredentials
 from src.usecases.authUsecase import authUsecase
@@ -34,10 +34,10 @@ class authController(FlaskView):
             
             return jsonify({
                 "success": True,
-                "message": "Successfully logged in via Google.",
+                "message": "Logged in via Google.",
                 "data": userCreds.model_dump(),
                 "timestamp": datetime.now().isoformat()
-            }), 200
+            }), 201
         
         except Exception as e:
             print(f"Error on googleLogin controller: {e}")
@@ -50,6 +50,107 @@ class authController(FlaskView):
             return jsonify({
                 "success": False,
                 "error": f"Unexpected internal server error on googleLogin controller: {e}",
+                "timestamp": datetime.now().isoformat()
+            }), 500
+        
+    @route("/getCredentials", methods=['GET'])
+    def getCredentials(self):
+        try:
+            data, sessionDescription = self.authUsecase.retrieveCredentials()
+            @after_this_request
+            def addCSRFTokenHeader(response):
+                response.headers["X-CSRF-Token"] = session["CSRFToken"]
+                return response
+
+            if sessionDescription == "newPreLogin":
+                redirect('/')
+                return jsonify({
+                    "success": True,
+                    "message": "Created a new pre-login session with a new CSRF token.",
+                    "timestamp": datetime.now().isoformat()
+                }), 201
+            
+            elif sessionDescription == "existingPreLogin":
+                redirect('/')
+                return jsonify({
+                    "success": True,
+                    "message": "Retrieved the CSRF token of existing pre-login session.",
+                    "timestamp": datetime.now().isoformat()
+                }), 200
+            
+            elif sessionDescription == "postLogin":
+                redirect('/dashboard')
+                return jsonify({
+                    "success": True,
+                    "message": "Retrieved the credentials of existing post-login session.",
+                    "data": data.model_dump(),
+                    "timestamp": datetime.now().isoformat()
+                }), 200
+            
+        except Exception as e:
+            print(f"Error on getCredentials controller: {e}")
+            if isinstance(e, AppError):
+                return jsonify({
+                    "success": False,
+                    "error": e.message,
+                    "timestamp": datetime.now().isoformat()
+                }), e.statusCode
+            return jsonify({
+                "success": False,
+                "error": f"Unexpected internal server error on getCredentials controller: {e}",
+                "timestamp": datetime.now().isoformat()
+            }), 500
+        
+    @route("/signIn", methods=['POST'])
+    def signIn(self):
+        try:
+            try:
+                data = manualSignInRequest( **request.get_json() )
+            except ValidationError as e:
+                raise AppError(f'Invalid request body for api/auth/signIn: {e}', 400)
+
+            result: userCredentials = self.authUsecase.signIn(data=data)
+            @after_this_request
+            def addCSRFTokenHeader(response):
+                response.headers["X-CSRF-Token"] = session["CSRFToken"]
+                return response
+            
+            return jsonify({
+                "success": True,
+                "message": "Signed in.",
+                "data": result.model_dump(),
+                "timestamp": datetime.now().isoformat()
+            }), 201
+        
+        except Exception as e:
+            print(f"Error on signIn controller: {e}")
+            if isinstance(e, AppError):
+                return jsonify({
+                    "success": False,
+                    "error": e.message,
+                    "timestamp": datetime.now().isoformat()
+                }), e.statusCode
+            return jsonify({
+                "success": False,
+                "error": f"Unexpected internal server error on signIn controller: {e}",
+                "timestamp": datetime.now().isoformat()
+            }), 500
+    
+    @route("/signUp", methods=['POST'])
+    def signUp(self):
+        try:
+            pass
+        except Exception as e:
+            print(f"Error on signUp controller: {e}")
+            if isinstance(e, AppError):
+                return jsonify({
+                    "success": False,
+                    "error": e.message,
+                    "timestamp": datetime.now().isoformat()
+                }), e.statusCode
+            return jsonify({
+                "success": False,
+                "error": f"Unexpected internal server error on signUp controller: {e}",
                 "timestamp": datetime.now().isoformat()
             }), 500
         

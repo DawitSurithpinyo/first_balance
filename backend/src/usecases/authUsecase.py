@@ -1,42 +1,47 @@
 import secrets
 from datetime import datetime
+from typing import Literal
 
 import google_auth_oauthlib.flow
+from argon2 import PasswordHasher, exceptions
 from config.googleOAuthConfig import (DEV_CLIENT_SECRETS_FILE,
                                       DEV_REDIRECT_URI, SCOPES)
-from flask import session
+from flask import request, session
+from flask_caching import Cache
 from googleapiclient.discovery import build
 from pydantic import ValidationError
 from redis import Redis
 from src.repositories.userRepo import userRepository
-from src.types.auth.POST import googleLoginRequest
+from src.types.auth.GET import sessionPostLogin, sessionPreLogin
+from src.types.auth.POST import googleLoginRequest, manualSignInRequest
 from src.types.error.AppError import AppError
-from src.types.user.PATCH import userCredentials
+from src.types.user.PATCH import fullUserCredentials, userCredentials
+from src.utils.checkSessionType import checkSessionType
 
 
 class authUsecase:
     def __init__(self, 
                  redisSession: Redis | None = None,
-                 userRep: userRepository | None = None):
-        from run import sessionRedis
+                 pwHasher: PasswordHasher | None = None,
+                 cacher: Cache | None = None):
         self.userRepo = userRepository()
-        self.redisSession = sessionRedis
-
-        if redisSession is not None:
+        if redisSession is None and pwHasher is None and cacher is None:
+            from run import cache, passwordHasher, sessionRedis
+            self.redisSession = sessionRedis
+            self.cache = cache
+            self.passwordHasher = passwordHasher
+        else:
             self.redisSession = redisSession
-        if userRep is not None:
-            self.userRepo = userRep
+            self.cache = cacher
+            self.passwordHasher = pwHasher
 
     def googleLogin(self, data: googleLoginRequest) -> userCredentials:
-        # try:
-        state = secrets.token_urlsafe(128)
         flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
             DEV_CLIENT_SECRETS_FILE,
             scopes=SCOPES,
-            state=state
+            state=request.headers.get('CSRFToken', type = str)
         )
         flow.redirect_uri = 'postmessage'
-        # flow.redirect_uri = DEV_REDIRECT_URI
 
         # Exchange authorization code for refresh and access tokens
         flow.fetch_token(code=data.code)
@@ -50,33 +55,94 @@ class authUsecase:
             "userEmail": userInfo['email'],
             "userName": userInfo['name'],
             "userPictureLink": userInfo['picture'],
+            "token": flowCreds.token,
             "refreshToken": flowCreds.refresh_token,
             "grantedScopes": flowCreds.granted_scopes,
             "lastLoginTime": datetime.now().isoformat()
         }
         try:
-            result = userCredentials( **self.userRepo.patchUserCredentials(user, email = userInfo['email'], returnAs = "whole") )
+            result = userCredentials( **self.userRepo.patchUserCredentials(user, email = userInfo['email'], projection = {'hashedPassword': False}) )
         except ValidationError as e:
-            raise AppError(f'Error from authUsecase.googleLogin: Invalid userRepo.patchUserCredentials return data. Details: {e}', 400)
-
-        # Keep necessary information in server-side session
-        csrfToken = secrets.token_urlsafe(128)
-        session.update( **{
+            raise AppError(f'Error from authUsecase.googleLogin: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+        
+        session.clear() # Clear pre-login session
+        session.update( sessionPostLogin( **{
             "userID": result.userID,
-            "token": flowCreds.token,
-            "refreshToken": flowCreds.refresh_token,
-            "CSRFToken": csrfToken
-        } )
+            "CSRFToken": secrets.token_urlsafe(128)
+        } ).model_dump() )
 
         return result
 
-        # except Exception as e:
-        #     print(f"Error from authUsecase.googleLogin: {e}")
+    def retrieveCredentials(self) -> \
+        tuple[None, Literal["newPreLogin"]] | \
+        tuple[None, Literal["existingPreLogin"]] | \
+        tuple[userCredentials, Literal["postLogin"]]:
 
+        sessionType = checkSessionType(dict(session))
+        if sessionType == "unknown":
+            # This is user's first time visiting, or their cookies and session has expired
+            # They will need to log in
+            data = sessionPreLogin( **{
+                "CSRFToken": secrets.token_urlsafe(128)
+            } )
+            session.update(data.model_dump())
+            return None, "newPreLogin"
+        
+        elif sessionType == "preLogin":
+            # User is not authenticated yet, but already received the pre-login CSRFToken
+            # This is for when user refreshes the page and lost in-memory CSRF token
+            # So we will just send back the CSRF token via header
+            return None, "existingPreLogin"
+        
+        elif sessionType == "postLogin":
+            result: userCredentials = self.userRepo.getUserCredentials(
+                userID = session['userID'],
+                projection = {'hashedPassword': False}
+            )
+            return result, "postLogin"
+        
+        raise AppError('Error from authUsecase.retrieveCredentials: server session not valid.', 500)
+
+    def signIn(self, data: manualSignInRequest) -> userCredentials:
+        try:
+            cred = fullUserCredentials( **self.userRepo.getUserCredentials(userEmail = data.userEmail) )
+        except ValidationError as e:
+            raise AppError(f'Error from authUsecase.signIn: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+        
+        if cred is None or cred.hashedPassword is None:
+            raise AppError('Error from authUsecase.signIn: this user has never registered manually with a password before.', 400)
+        
+        try:
+            self.passwordHasher.verify(cred.hashedPassword, data.password)
+        except exceptions.VerifyMismatchError:
+            raise AppError('Error from authUsecase.signIn: userName or password is incorrect.', 400)
+        
+        session.clear() # Clear pre-login session
+        session.update( sessionPostLogin( **{
+            "userID": cred.userID,
+            "CSRFToken": secrets.token_urlsafe(128)
+        } ).model_dump() )
+
+        if self.passwordHasher.check_needs_rehash(cred.hashedPassword):
+            newHash = self.passwordHasher.hash(data.password)
+            try:
+                result = userCredentials( **self.userRepo.patchUserCredentials(
+                    user = {
+                        'hashedPassword': newHash
+                    },
+                    OID = cred['userID'],
+                    projection = {'hashedPassword': False}
+                ) )
+                return result
+            except ValidationError as e:
+                raise AppError(f'Error from authUsecase.signIn: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+
+        del cred.hashedPassword
+        try:
+            result = userCredentials( **cred )
+            return result
+        except ValidationError as e:
+            raise AppError(f'Error from authUsecase.signIn: Invalid return data. Details: {e}', 500)
+        
     def logout(self) -> None:
-        # How to delete session of specific user?
-        # self.redisSession.delete()
-        # Hm, no. We don't need to do the above. 
-        # I think flask_session itself will manually delete session in the DB once it expires.
-        # Which I think the default age for session is 31 days.
         session.clear()
