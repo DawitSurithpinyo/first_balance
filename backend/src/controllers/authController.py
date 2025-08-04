@@ -3,7 +3,8 @@ from datetime import datetime
 from flask import after_this_request, jsonify, redirect, request, session
 from flask_classful import FlaskView, route
 from pydantic import ValidationError
-from src.types.auth.POST import googleLoginRequest, manualSignInRequest
+from src.types.auth.POST import (googleLoginRequest, manualSignInRequest,
+                                 manualSignUpRequest)
 from src.types.error.AppError import AppError
 from src.types.user.PATCH import userCredentials
 from src.usecases.authUsecase import authUsecase
@@ -139,7 +140,19 @@ class authController(FlaskView):
     @route("/signUp", methods=['POST'])
     def signUp(self):
         try:
-            pass
+            try:
+                data = manualSignUpRequest( **request.get_json() )
+            except ValidationError as e:
+                raise AppError(f'Invalid request body for api/auth/signUp: {e}', 400)
+            
+            result: userCredentials = self.authUsecase.signUp(data=data)
+            return jsonify({
+                "success": True,
+                "message": "Signed up.",
+                "data": result.model_dump(),
+                "timestamp": datetime.now().isoformat()
+            }), 201
+
         except Exception as e:
             print(f"Error on signUp controller: {e}")
             if isinstance(e, AppError):

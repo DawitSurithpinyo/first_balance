@@ -6,14 +6,15 @@ import google_auth_oauthlib.flow
 from argon2 import PasswordHasher, exceptions
 from config.googleOAuthConfig import (DEV_CLIENT_SECRETS_FILE,
                                       DEV_REDIRECT_URI, SCOPES)
-from flask import request, session
+from flask import current_app, request, session
 from flask_caching import Cache
 from googleapiclient.discovery import build
 from pydantic import ValidationError
 from redis import Redis
 from src.repositories.userRepo import userRepository
 from src.types.auth.GET import sessionPostLogin, sessionPreLogin
-from src.types.auth.POST import googleLoginRequest, manualSignInRequest
+from src.types.auth.POST import (googleLoginRequest, manualSignInRequest,
+                                 manualSignUpRequest)
 from src.types.error.AppError import AppError
 from src.types.user.PATCH import fullUserCredentials, userCredentials
 from src.utils.checkSessionType import checkSessionType
@@ -70,6 +71,7 @@ class authUsecase:
             "userID": result.userID,
             "CSRFToken": secrets.token_urlsafe(128)
         } ).model_dump() )
+        current_app.session_interface.regenerate() # regenerate session ID
 
         return result
 
@@ -122,6 +124,7 @@ class authUsecase:
             "userID": cred.userID,
             "CSRFToken": secrets.token_urlsafe(128)
         } ).model_dump() )
+        current_app.session_interface.regenerate() # regenerate session ID
 
         if self.passwordHasher.check_needs_rehash(cred.hashedPassword):
             newHash = self.passwordHasher.hash(data.password)
@@ -144,5 +147,33 @@ class authUsecase:
         except ValidationError as e:
             raise AppError(f'Error from authUsecase.signIn: Invalid return data. Details: {e}', 500)
         
+    def signUp(self, data: manualSignUpRequest) -> userCredentials:
+        exists = self.userRepo.getUserCredentials(
+            userEmail = data.userEmail,
+            projection = {'_id': True}
+        )
+        if exists is not None:
+            raise AppError('Error from authUsecase.signUp: user with this email already exists.')
+        
+        hashcode = self.passwordHasher.hash(data.password)
+        result = self.userRepo.patchUserCredentials(
+            user = {
+                'userEmail': data.userEmail,
+                'userName': data.userName,
+                'hashedPassword': hashcode
+            },
+            email = data.userEmail,
+            projection = {'hashedPassword': False}
+        )
+
+        try:
+            cred = userCredentials( **result )
+        except ValidationError as e:
+            raise AppError(f'Error from authUsecase.signUp: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+
+        return cred
+        
     def logout(self) -> None:
+        key = f"session:{session.sid}"
         session.clear()
+        self.redisSession.delete(key)
