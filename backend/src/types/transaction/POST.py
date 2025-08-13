@@ -1,15 +1,27 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, field_validator
+from src.types.error.AppError import AppError
 
 
-class newTransactionData(BaseModel):
+class newTransactionData(BaseModel, extra='forbid'):
     """
         For new transaction data (no object ID yet).
     """
     transactionName: str
     accountID: str
     value: int | float
-    date: str = Field(default_factory=lambda: datetime().now().strftime("%Y-%m-%d"))
-    # ^ MongoDB need "yyyy-mm-dd" format to query/compare dates
-    memo: str | None
+    date: str
+    """
+        Store as ISO str in this model, but put in DB as `datetime` object.
+    """
+    memo: str | None = None
+
+    @field_validator("date")
+    @classmethod
+    def validate_iso_date(cls, v: str):
+        try:
+            datetime.fromisoformat(v)
+            return v
+        except Exception as e:
+            raise AppError(f'Error while creating newTransactionData model: expect ISO format str for the "date" field. Details: {e}', 400)

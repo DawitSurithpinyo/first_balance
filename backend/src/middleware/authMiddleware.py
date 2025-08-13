@@ -1,4 +1,5 @@
-from datetime import datetime
+import traceback
+from datetime import datetime, timezone
 
 from flask import jsonify, request, session
 from src.types.error.AppError import AppError
@@ -22,23 +23,25 @@ def authMiddleware():
             # Authenticated users should have server-side session
             # Even when they are not logged in yet, server should've established a pre-login session with login CSRF token already
             raise AppError("User is unauthenticated.", 401)
-
+        
         if request.method not in ['GET', 'HEAD', 'OPTIONS']:
             # Check CSRF token for state-changing requests
-            incomingCSRFToken = request.headers.get('X-CSRF-Token', type = str)
+            incomingCSRFToken = request.headers.get('X-CSRF-Token', type = str, default = None)
             sessionCSRFToken = session['CSRFToken']
             if incomingCSRFToken is None or sessionCSRFToken is None or incomingCSRFToken != sessionCSRFToken:
                 raise AppError("Invalid CSRF token.", 401)
         
     except Exception as e:
+        print("Error on auth middleware: ")
+        traceback.print_exc()
         if isinstance(e, AppError):
             return jsonify({
                 "success": False,
                 "error": e.message,
-                "datetime": datetime.now().isoformat()
+                "datetime": datetime.now(timezone.utc).isoformat()
             }), e.statusCode
         return jsonify({
             "success": False,
             "error": f"Unexpected internal server error on authMiddleware: {e}",
-            "datetime": datetime.now().isoformat()
+            "datetime": datetime.now(timezone.utc).isoformat()
         }), 500

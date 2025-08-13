@@ -1,16 +1,21 @@
-from datetime import datetime
+import traceback
+from datetime import datetime, timezone
 
 from argon2 import PasswordHasher
 from config.flaskConfig import *
 from dotenv import load_dotenv
 from flask import Flask, jsonify
-from flask_caching import Cache
 from flask_cors import CORS
 from flask_session import Session
 from pymongo import MongoClient
 from redis import Redis
 from src.controllers.authController import authController
+from src.controllers.transactionController import transactionController
 from src.middleware import authMiddleware
+from src.repositories.transactionRepo import transactionRepository
+from src.repositories.userRepo import userRepository
+from src.usecases.authUsecase import authUsecase
+from src.usecases.transactionUsecase import transactionUsecase
 
 
 def createApp(config) -> Flask:
@@ -24,21 +29,19 @@ def createApp(config) -> Flask:
         return app
         
     except Exception as e:
-        print(f"Error while setting up server configs: {e}")
+        print("Error while setting up server configs: ")
+        traceback.print_exc()
         with app.app_context():
             return jsonify({
                 "success": False,
                 "error": f"Internal server error on initiating server config: {e}",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
 
 
 def initInfra(config) -> tuple[Redis, MongoClient]:
     """
         Set up MongoDB and Redis for `Session`. 
-
-        Redis for `Cache` is already set internally in `createApp()` via `config.CACHE_REDIS_URL` and `config.CACHE_TYPE`.
-        Use `flask_caching`'s decorators to perform caching.
 
         Please supply config with any classes from `config/flaskConfig.py`, except `BaseConfig`.
     """
@@ -47,25 +50,25 @@ def initInfra(config) -> tuple[Redis, MongoClient]:
             raise ValueError("SESSION_REDIS_URL must be configured.")
         sessionRedis = Redis.from_url(config.SESSION_REDIS_URL)
 
-        if not config.MONGO_URL:
-            raise ValueError("MONGO_URL must be configured.")
-        mongoClient = MongoClient(config.MONGO_URL)
+        if not config.MONGO_CONFIGS:
+            raise ValueError("MONGO_CONFIGS must be configured.")
+        mongoClient = MongoClient( **config.MONGO_CONFIGS )
 
-    except Exception as e:
-        print(f"Error while setting up MongoDB and Redis for Session: {e}")
-        print(f"Timestamp: {datetime.now().isoformat()}")
+    except Exception:
+        print("Error while setting up MongoDB and Redis for Session: ")
+        traceback.print_exc()
+        print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
 
     return sessionRedis, mongoClient
 
 
-def initAppAddOns(app: Flask, config) -> tuple[Cache, PasswordHasher]:
+def initAppAddOns(app: Flask, config) -> PasswordHasher:
     """
-        Add Session, CORS, Cache, and Argon2 PasswordHasher. Return `cache` and `passwordHasher`.
+        Add Session, CORS, and Argon2 PasswordHasher. Return `passwordHasher`.
 
         Please supply config with any classes from `config/flaskConfig.py`, except `BaseConfig`.
     """
     try:
-        cache = Cache(app)
         Session(app)
         if hasattr(config, 'CORS_CONFIGS'):
             CORS(app, **config.CORS_CONFIGS)
@@ -77,22 +80,54 @@ def initAppAddOns(app: Flask, config) -> tuple[Cache, PasswordHasher]:
         else:
             passwordHasher = PasswordHasher()
 
-        return cache, passwordHasher
+        return passwordHasher
     
     except Exception as e:
-        print(f"Error while setting up app Session, CORS, and Cache: {e}")
+        print("Error while setting up app Session and CORS: ")
+        traceback.print_exc()
         with app.app_context():
             return jsonify({
                 "success": False,
-                "error": f"Internal server error on setting up app Session, CORS, and Cache: {e}",
-                "timestamp": datetime.now().isoformat()
+                "error": f"Internal server error on setting up app Session and CORS: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
 
 
 def initMiddlewares(app: Flask) -> None:
-    app.before_request(authMiddleware.authMiddleware)
+    try:
+        app.before_request(authMiddleware.authMiddleware)
+    except Exception as e:
+        print("Error while setting up auth middleware: ")
+        traceback.print_exc()
+        with app.app_context():
+            return jsonify({
+                "success": False,
+                "error": f"Internal server error on setting up auth middleware: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }), 500
 
 
-def initViews(app: Flask) -> None:
-    URL_PREFIX: str = '/api'
-    authController.register(app, route_base='/auth', route_prefix=URL_PREFIX)
+def initViews(app: Flask, sessionRedis: Redis, mongoClient: MongoClient, passwordHasher: PasswordHasher) -> None:
+    try:
+        userRepo = userRepository(mongo=mongoClient, redisSession=sessionRedis)
+        transacRepo = transactionRepository(mongo=mongoClient)
+
+        authUsecases = authUsecase(userRepo=userRepo, flaskApp=app, redisSession=sessionRedis, pwHasher=passwordHasher)
+        transacUsecases = transactionUsecase(transactionRepo=transacRepo)
+
+        authControl = authController(useCase=authUsecases)
+        transacControl = transactionController(useCase=transacUsecases)
+
+        URL_PREFIX: str = '/api'
+        authControl.register(app, init_argument=authUsecases, route_base='/auth', route_prefix=URL_PREFIX)
+        transacControl.register(app, init_argument=transacUsecases, route_base='/transaction', route_prefix=URL_PREFIX)
+
+    except Exception as e:
+        print("Error while setting up Flask views (API routes): ")
+        traceback.print_exc()
+        with app.app_context():
+            return jsonify({
+                "success": False,
+                "error": f"Internal server error on setting up Flask views (API routes) {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }), 500

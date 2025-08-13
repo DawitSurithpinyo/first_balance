@@ -149,6 +149,8 @@ First, a common misconception between singleton and "single instance":
 
 - [Source](https://datatracker.ietf.org/doc/html/rfc9110#name-client-error-4xx)
 
+## SMTP
+
 ## cache vs session vs cookies
 - Store in cookies (client-side session) vs session vs in Redis cache? (Efficiency, security implications, etc)
 

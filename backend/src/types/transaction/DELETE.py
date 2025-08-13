@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 
 
-class deleteOneTransactionRequest(BaseModel):
+class deleteOneTransactionRequest(BaseModel, extra='forbid'):
     transactionID: str
 
-class deleteManyTransactionsRequest(BaseModel):
+class deleteManyTransactionsRequest(BaseModel, extra='forbid'):
     transactionIDsList: list[str]

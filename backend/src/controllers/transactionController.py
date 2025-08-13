@@ -1,46 +1,51 @@
-from datetime import datetime
-from types.error.AppError import AppError
+import traceback
+from datetime import datetime, timezone
 
 from flask import jsonify, request
 from flask_classful import FlaskView, route
 from pydantic import ValidationError
-from src.types.transaction.common import transactionData
+from src.types.error.AppError import AppError
 from src.types.transaction.DELETE import (deleteManyTransactionsRequest,
                                           deleteOneTransactionRequest)
+from src.types.transaction.PATCH import partialTransaction
 from src.types.transaction.POST import newTransactionData
 from src.usecases.transactionUsecase import transactionUsecase
 
 
 class transactionController(FlaskView):
-    def __init__(self, useCase: transactionUsecase | None = None):
-        if useCase is None:
-            self.transactionUsecase = transactionUsecase()
-        else:
-            self.transactionUsecase = useCase
+    def __init__(self, useCase: transactionUsecase):
+        self.transactionUsecase = useCase
 
     @route("/get", methods=['GET'])
     def getAllTransactions(self):
         try:
-            transactions: list = self.transactionUsecase.getTransactions()
+            transactions: list | None = self.transactionUsecase.getTransactions()
+            if transactions is None:
+                return jsonify({
+                    "success": True,
+                    "message": "User's transactions data is up to date, no re-fetching is needed.",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }), 302
 
             return jsonify({
                 "success": True,
                 "message": "Retrieved user's data.",
                 "data": transactions,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 200
         except Exception as e:
-            print(f"Error on getAllTransactions controller: {e}")
+            print("Error on transactionController.getAllTransactions: ")
+            traceback.print_exc()
             if isinstance(e, AppError):
                 return jsonify({
                     "success": False,
                     "error": e.message,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }), e.statusCode
             return jsonify({
                 "success": False,
-                "error": f"Unexpected internal server error on getAllTransactions controller: {e}",
-                "timestamp": datetime.now().isoformat()
+                "error": f"Unexpected internal server error on transactionController.getAllTransactions: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
         
     @route("/add", methods=['POST'])
@@ -55,20 +60,22 @@ class transactionController(FlaskView):
             return jsonify({
                 "success": True,
                 "message": f"Inserted a transaction with ID {insertedID}.",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 201
+        
         except Exception as e:
-            print(f"Error on addTransaction controller: {e}")
+            print("Error on transactionController.addTransaction: ")
+            traceback.print_exc()
             if isinstance(e, AppError):
                 return jsonify({
                     "success": False,
                     "error": e.message,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }), e.statusCode
             return jsonify({
                 "success": False,
-                "error": f"Unexpected internal server error on addTransaction controller: {e}",
-                "timestamp": datetime.now().isoformat()
+                "error": f"Unexpected internal server error on transactionController.addTransaction: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
 
     @route("/deleteOne", methods=['DELETE']) 
@@ -83,20 +90,22 @@ class transactionController(FlaskView):
             return jsonify({
                 "success": True,
                 "message": f"Deleted a transaction with object ID {data.transactionID}.",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 200
+        
         except Exception as e:
-            print(f"Error on deleteOne controller: {e}")
+            print("Error on transactionController.deleteOne: ")
+            traceback.print_exc()
             if isinstance(e, AppError):
                 return jsonify({
                     "success": False,
                     "error": e.message,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }), e.statusCode
             return jsonify({
                 "success": False,
-                "error": f"Unexpected internal server error on deleteOne controller: {e}",
-                "timestamp": datetime.now().isoformat()
+                "error": f"Unexpected internal server error on transactionController.deleteOne: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
     
     @route("/deleteMany", methods=['DELETE']) 
@@ -111,40 +120,55 @@ class transactionController(FlaskView):
             return jsonify({
                 "success": True,
                 "message": f"Deleted {numberDeleted} transactions.",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 200
         except Exception as e:
-            print(f"Error on deleteMany controller: {e}")
+            print("Error on transactionController.deleteMany: ")
+            traceback.print_exc()
             if isinstance(e, AppError):
                 return jsonify({
                     "success": False,
                     "error": e.message,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }), e.statusCode
             return jsonify({
                 "success": False,
-                "error": f"Unexpected internal server error on deleteMany controller: {e}",
-                "timestamp": datetime.now().isoformat()
+                "error": f"Unexpected internal server error on transactionController.deleteMany: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500      
         
     @route("/update", methods=['PATCH']) 
     def update(self):
         try:
             try:
-                data = transactionData( **request.get_json() )
+                data = partialTransaction( **request.get_json() )
             except ValidationError as e:
                 raise AppError(f'Invalid request body for api/transaction/update: {e}', 400)
             
+            updated = self.transactionUsecase.updateTransaction(transaction=data)
+            if not updated:
+                return jsonify({
+                    "success": True,
+                    "message": "Only transactionID is provided, no update is made.",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }), 200
+            return jsonify({
+                "success": True,
+                "message": "Updated a transaction.",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }), 200
+        
         except Exception as e:
-            print(f"Error on update controller: {e}")
+            print("Error on transactionController.update: ")
+            traceback.print_exc()
             if isinstance(e, AppError):
                 return jsonify({
                     "success": False,
                     "error": e.message,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }), e.statusCode
             return jsonify({
                 "success": False,
-                "error": f"Unexpected internal server error on update controller: {e}",
-                "timestamp": datetime.now().isoformat()
+                "error": f"Unexpected internal server error on transactionController.update: {e}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500    

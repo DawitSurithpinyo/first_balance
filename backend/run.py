@@ -8,14 +8,14 @@ conf = DevConfig
 sessionRedis, mongoClient = initInfra(conf)
 app = createApp(conf)
 
-# Set app.config['SESSION_REDIS'] before setting Session, CORS, and Cache
+# Set app.config['SESSION_REDIS'] before setting Session
 # to make sure Session point to the right Redis instance
 app.config['SESSION_REDIS'] = sessionRedis
-cache, passwordHasher = initAppAddOns(app, conf)
+passwordHasher = initAppAddOns(app, conf)
 
 # Finally, initialize middleware and routes
 initMiddlewares(app)
-initViews(app)
+initViews(app, sessionRedis, mongoClient, passwordHasher)
 
 
 if __name__ == "__main__":

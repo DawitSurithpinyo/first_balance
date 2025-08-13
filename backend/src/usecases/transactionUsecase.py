@@ -1,70 +1,113 @@
 from datetime import datetime
 
 from flask import session
-from flask_caching import Cache
 from pydantic import ValidationError
 from src.repositories.transactionRepo import transactionRepository
-from src.types.auth.GET import sessionPostLogin
 from src.types.error.AppError import AppError
 from src.types.transaction.common import transactionData
+from src.types.transaction.PATCH import partialTransaction
 from src.types.transaction.POST import newTransactionData
+from src.utils.checkSessionType import checkSessionType
 from src.utils.convertStrToOID import convertStrToObjectID
 
 
 class transactionUsecase:
-    def __init__(self, cacher: Cache | None = None):
-        self.transactionRepo = transactionRepository()
-        if cacher is None:
-            from run import cache
-            self.cache = cache
-        else:
-            self.cache = cacher
+    def __init__(self, transactionRepo: transactionRepository):
+        self.transactionRepo = transactionRepo
 
-    def getTransactions(self) -> list[transactionData] | list[None]:
-        try:
-            userID = sessionPostLogin( **dict(session) ).userID
-        except ValidationError as e:
-            raise AppError(f'Error from transactionUsecase.getTransactions: Invalid session format, likely because user is not authenticated. Details: {e}', 401)
+    def getTransactions(self) -> list[dict] | list[None] | None:
+        """
+            If there is at least one transaction data for the given `userID` (`session['userID']`), 
+            the returned list should have elements as dicts of `transactionData` structure.
+        """
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from transactionUsecase.getTransactions: Invalid session format, likely because user is not authenticated.', 401)
         
-        transactions: list = self.transactionRepo.getTransactions(userID = userID)
+        if not session['needTransactionsReFetch']:
+            return None
+        
+        transactions: list = self.transactionRepo.getTransactions(userID = session['userID'])
         if transactions is not None and len(transactions) > 0:
             for transaction in transactions:
                 transaction["transactionID"] = str(transaction.pop("_id"))
-                transaction["date"] = datetime.strptime(transaction.pop("date"), "%Y-%m-%d").strftime("%d-%m-%Y")
+                transaction["date"] = datetime.strftime(transaction["date"], "%d-%m-%Y")
                 try:
                     transaction = transactionData( **transaction )
                     transaction = transaction.model_dump()
                 except ValidationError as e:
-                    raise AppError(f'Error from transactionUsecase.getTransactions: Invalid transaction document returned from transactionRepository.getTransactions. Details: {e}', 500)
+                    raise AppError(f'Error from transactionUsecase.getTransactions: Document ID {transaction["transactionID"]} returned from transactionRepository.getTransactions is invalid for type transactionData. Details: {e}', 500)
+                
+        session['needTransactionsReFetch'] = False
 
         return transactions
     
     def addTransaction(self, data: newTransactionData) -> str:
-        try:
-            userID = sessionPostLogin( **dict(session) ).userID
-        except ValidationError as e:
-            raise AppError(f'Error from transactionUsecase.addTransaction: Invalid session format, likely because user is not authenticated. Details: {e}', 401)
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from transactionUsecase.addTransaction: Invalid session format, likely because user is not authenticated.', 401)
         
-        insertedID: str = self.transactionRepo.addTransaction(data=data, userID=userID, returnDocumentID=True)
+        d = data.model_dump()
+        d['date'] = datetime.fromisoformat(d['date'])
+        
+        insertedID: str = self.transactionRepo.addTransaction(data=d, userID=session['userID'], returnDocumentID=True)
+        session['needTransactionsReFetch'] = True
+
         return insertedID
     
     def deleteOne(self, transactionID: str) -> None:
-        try:
-            userID = sessionPostLogin( **dict(session) ).userID
-        except ValidationError as e:
-            raise AppError(f'Error from transactionUsecase.deleteOne: Invalid session format, likely because user is not authenticated. Details: {e}', 401)
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from transactionUsecase.deleteOne: Invalid session format, likely because user is not authenticated.', 401)
         
         transactionID = convertStrToObjectID(field=transactionID, fieldName='transactionID', originFuncName='transactionUsecase.deleteOne')
-        self.transactionRepo.deleteOne(transactionID=transactionID, userID=userID)
+        self.transactionRepo.deleteOne(transactionID=transactionID, userID=session['userID'])
+
+        session['needTransactionsReFetch'] = True
 
     def deleteMany(self, transactionIDs: list[str]) -> int:
-        try:
-            userID = sessionPostLogin( **dict(session) ).userID
-        except ValidationError as e:
-            raise AppError(f'Error from transactionUsecase.deleteMany: Invalid session format, likely because user is not authenticated. Details: {e}', 401)
+        """
+            Return number of documents deleted.
+        """
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from transactionUsecase.deleteMany: Invalid session format, likely because user is not authenticated.', 401)
         
-        IDs = [ convertStrToObjectID(field=id, fieldName="transactionID", 
-                originFuncName="transactionUsecase.deleteMany") for id in transactionIDs ]
-            
-        numberDeleted: int = self.transactionRepo.deleteMany(transactionIDs=IDs, userID=userID, returnNumberDeleted=True)
-        return numberDeleted
+        if len(transactionIDs) > 0:
+            IDs = [ convertStrToObjectID(field=id, fieldName="transactionID", 
+                    originFuncName="transactionUsecase.deleteMany") for id in transactionIDs ]
+                
+            numberDeleted: int = self.transactionRepo.deleteMany(transactionIDs=IDs, userID=session['userID'], returnNumberDeleted=True)
+            session['needTransactionsReFetch'] = True
+            return numberDeleted
+        
+        return 0 # If list empty (no documents to delete), don't bother making round trip to DB
+    
+    def updateTransaction(self, transaction: partialTransaction) -> bool:
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from transactionUsecase.updateTransaction: Invalid session format, likely because user is not authenticated.', 401)
+        
+        check = transaction.model_dump()
+        toUpdate: dict = {}
+        for k, v in check.items():
+            if v is not None:
+                toUpdate[k] = v
+        if len(toUpdate) <= 1 and 'transactionID' in toUpdate.keys():
+            # Avoid making round trip to DB if the request body only contains transactionID (nothing to update)
+            return False
+
+        transacID = convertStrToObjectID(field=toUpdate['transactionID'], fieldName='transactionID', 
+                                         originFuncName='transactionUsecase.updateTransaction')
+        del toUpdate['transactionID']
+        if 'date' in toUpdate.keys():
+            toUpdate['date'] = datetime.fromisoformat(toUpdate['date'])
+
+        # try:
+        #     body = newTransactionData( **transaction )
+        # except ValidationError as e:
+        #     raise AppError(f'Error from transactionUsecase.updateTransaction: Invalid body of transaction after removing transactionID (it should become newTransactionData type). Details: {e}', 400)
+        
+        self.transactionRepo.updateTransaction(transactionID=transacID, userID=session['userID'], updateBody=toUpdate)
+        session['needTransactionsReFetch'] = True
+        return True

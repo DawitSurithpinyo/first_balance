@@ -1,42 +1,41 @@
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.mime.text import MIMEText
 from typing import Literal
 
 import google_auth_oauthlib.flow
 from argon2 import PasswordHasher, exceptions
-from config.googleOAuthConfig import (DEV_CLIENT_SECRETS_FILE,
-                                      DEV_REDIRECT_URI, SCOPES)
-from flask import current_app, request, session
-from flask_caching import Cache
+from config.googleOAuthConfig import DEV_CLIENT_SECRETS_FILE, SCOPES
+from flask import Flask, current_app, request, session
 from googleapiclient.discovery import build
 from pydantic import ValidationError
 from redis import Redis
 from src.repositories.userRepo import userRepository
 from src.types.auth.GET import sessionPostLogin, sessionPreLogin
-from src.types.auth.POST import (googleLoginRequest, manualSignInRequest,
-                                 manualSignUpRequest)
+from src.types.auth.POST import (forgotPasswordRequest, googleLoginRequest,
+                                 manualSignInRequest, manualSignUpRequest,
+                                 resetPasswordRequest)
+from src.types.enum import authChoice
 from src.types.error.AppError import AppError
-from src.types.user.PATCH import fullUserCredentials, userCredentials
+from src.types.user.common import (googleUser, normalUser,
+                                   normalUserWithPassword)
 from src.utils.checkSessionType import checkSessionType
+from src.utils.convertStrToOID import convertStrToObjectID
+from src.utils.sendEmail import sendEmail
 
 
 class authUsecase:
     def __init__(self, 
-                 redisSession: Redis | None = None,
-                 pwHasher: PasswordHasher | None = None,
-                 cacher: Cache | None = None):
-        self.userRepo = userRepository()
-        if redisSession is None and pwHasher is None and cacher is None:
-            from run import cache, passwordHasher, sessionRedis
-            self.redisSession = sessionRedis
-            self.cache = cache
-            self.passwordHasher = passwordHasher
-        else:
-            self.redisSession = redisSession
-            self.cache = cacher
-            self.passwordHasher = pwHasher
+                 userRepo: userRepository,
+                 flaskApp: Flask,
+                 redisSession: Redis,
+                 pwHasher: PasswordHasher):
+        self.userRepo = userRepo
+        self.app = flaskApp
+        self.redisSession = redisSession
+        self.passwordHasher = pwHasher
 
-    def googleLogin(self, data: googleLoginRequest) -> userCredentials:
+    def googleLogin(self, data: googleLoginRequest) -> googleUser:
         flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
             DEV_CLIENT_SECRETS_FILE,
             scopes=SCOPES,
@@ -56,29 +55,53 @@ class authUsecase:
             "userEmail": userInfo['email'],
             "userName": userInfo['name'],
             "userPictureLink": userInfo['picture'],
-            "token": flowCreds.token,
+            "accessToken": flowCreds.token,
             "refreshToken": flowCreds.refresh_token,
-            "grantedScopes": flowCreds.granted_scopes,
-            "lastLoginTime": datetime.now().isoformat()
+            "grantedScopes": flowCreds.granted_scopes
         }
+        
+        # Check if user with this email already exists
+        # If not, make sure to activate their account
+        exists = self.userRepo.getUserCredentials(filter = {"userEmail": userInfo['email']})
+
+        if exists is not None and exists['signUpChoice'] == authChoice.MANUAL:
+            raise AppError('Error from authUsecase.googleLogin: User cannot login via Google OAuth, as their first sign up was done via manual sign up method.', 400)
+        
+        if exists is None:
+            user['signUpChoice'] = authChoice.GOOGLE
+            user['activatedTime'] = datetime.now(timezone.utc)
+
+        user['lastLoginTime'] = datetime.now(timezone.utc)
+
         try:
-            result = userCredentials( **self.userRepo.patchUserCredentials(user, email = userInfo['email'], projection = {'hashedPassword': False}) )
+            result = self.userRepo.patchUserCredentials(user, filter = {"userEmail": userInfo['email']})
+            result['userID'] = str(result.pop('_id'))
+            result = googleUser( **result )
         except ValidationError as e:
             raise AppError(f'Error from authUsecase.googleLogin: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
         
         session.clear() # Clear pre-login session
         session.update( sessionPostLogin( **{
             "userID": result.userID,
-            "CSRFToken": secrets.token_urlsafe(128)
+            "CSRFToken": secrets.token_urlsafe(128),
+            "needTransactionsReFetch": True
         } ).model_dump() )
-        current_app.session_interface.regenerate() # regenerate session ID
+        current_app.session_interface.regenerate(session) # regenerate session ID
+
+        # # Finally, allow fetching transaction data upon login
+        # with self.app.app_context():
+        #     print(f"session:{session.sid}")
+        #     sessionTTL = self.redisSession.ttl(f"session:{session.sid}")
+        #     print(sessionTTL)
+        #     # Set TTL of cache key to be the same as TTL of session key
+        #     self.cache.set(f"userID:{session['userID']}_need_refetch:", "true", ex=sessionTTL)
 
         return result
 
     def retrieveCredentials(self) -> \
         tuple[None, Literal["newPreLogin"]] | \
         tuple[None, Literal["existingPreLogin"]] | \
-        tuple[userCredentials, Literal["postLogin"]]:
+        tuple[normalUser | googleUser, Literal["postLogin"]]:
 
         sessionType = checkSessionType(dict(session))
         if sessionType == "unknown":
@@ -91,89 +114,267 @@ class authUsecase:
             return None, "newPreLogin"
         
         elif sessionType == "preLogin":
-            # User is not authenticated yet, but already received the pre-login CSRFToken
+            # User is not authenticated yet, but has already received the pre-login CSRFToken
             # This is for when user refreshes the page and lost in-memory CSRF token
             # So we will just send back the CSRF token via header
             return None, "existingPreLogin"
         
         elif sessionType == "postLogin":
-            result: userCredentials = self.userRepo.getUserCredentials(
-                userID = session['userID'],
+            # We need to be able fetch user's transaction data when login is completed, regardless of the last request on transaction made by the user before logging out.
+            session['needTransactionsReFetch'] = True
+
+            # Also send back their credentials, because they are wiped out if refreshed/tab closed too
+            id = convertStrToObjectID(field=session['userID'], fieldName='userID', originFuncName='authUsecase.retrieveCredentials')
+            result: dict = self.userRepo.getUserCredentials(
+                filter = {"_id": id},
                 projection = {'hashedPassword': False}
             )
-            return result, "postLogin"
+            result['userID'] = str(result.pop('_id'))
+            
+            try:
+                if result['signUpChoice'] == authChoice.GOOGLE:
+                    res = googleUser( **result )
+                    return res, "postLogin"
+                elif result['signUpChoice'] == authChoice.MANUAL:
+                    res = normalUser( **result )
+                    return res, "postLogin"
+            except ValidationError as e:
+                raise AppError(f'Error from authUsecase.retrieveCredentials: Invalid userCredentials data returned from userRepo.getUserCredentials() for "postLogin." Details: {e}', 500)
         
         raise AppError('Error from authUsecase.retrieveCredentials: server session not valid.', 500)
 
-    def signIn(self, data: manualSignInRequest) -> userCredentials:
+    def signIn(self, data: manualSignInRequest) -> normalUser:
+        # Check error cases
         try:
-            cred = fullUserCredentials( **self.userRepo.getUserCredentials(userEmail = data.userEmail) )
+            user = self.userRepo.getUserCredentials(filter = {"userEmail": data.userEmail})
+            if user is None:
+                raise AppError("Error from authUsecase.signIn: this user doesn't exists.", 400)
+            if user['signUpChoice'] == authChoice.GOOGLE:
+                raise AppError("Error from authUsecase.signIn: User cannot login via manual sign in, as their first sign up was done via Google OAuth method.", 400)
+            
+            user['userID'] = str(user.pop('_id'))
+            cred = normalUserWithPassword( **user )
         except ValidationError as e:
-            raise AppError(f'Error from authUsecase.signIn: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+            raise AppError(f'Error from authUsecase.signIn: Invalid userRepo.getUserCredentials return data. Details: {e}', 500)
         
-        if cred is None or cred.hashedPassword is None:
-            raise AppError('Error from authUsecase.signIn: this user has never registered manually with a password before.', 400)
+        if cred.activatedTime is None:
+            raise AppError('Error from authUsecase.signIn: this user has not activated their account yet.', 400)
         
+        # Check password
         try:
             self.passwordHasher.verify(cred.hashedPassword, data.password)
         except exceptions.VerifyMismatchError:
             raise AppError('Error from authUsecase.signIn: userName or password is incorrect.', 400)
         
+        user = {
+            'lastLoginTime': datetime.now(timezone.utc)
+        }
+        # Need to add a new password hash to credentials patching if it needs rehash
+        if self.passwordHasher.check_needs_rehash(cred.hashedPassword):
+            newHash = self.passwordHasher.hash(data.password)
+            user['hashedPassword'] = newHash
+
+        id = convertStrToObjectID(field=cred.userID, fieldName='userID', originFuncName='authUsecase.signIn')
+        try:
+            result = self.userRepo.patchUserCredentials(
+                user = user,
+                filter = {'_id': id},
+                projection = {'hashedPassword': False}
+            )
+            result['userID'] = str(result.pop('_id'))
+            result = normalUser( **result )
+        except ValidationError as e:
+            raise AppError(f'Error from authUsecase.signIn: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+        
         session.clear() # Clear pre-login session
         session.update( sessionPostLogin( **{
             "userID": cred.userID,
-            "CSRFToken": secrets.token_urlsafe(128)
+            "CSRFToken": secrets.token_urlsafe(128),
+            "needTransactionsReFetch": True # Allow fetching transaction data upon login
         } ).model_dump() )
-        current_app.session_interface.regenerate() # regenerate session ID
+        current_app.session_interface.regenerate(session) # regenerate session ID
 
-        if self.passwordHasher.check_needs_rehash(cred.hashedPassword):
-            newHash = self.passwordHasher.hash(data.password)
-            try:
-                result = userCredentials( **self.userRepo.patchUserCredentials(
-                    user = {
-                        'hashedPassword': newHash
-                    },
-                    OID = cred['userID'],
-                    projection = {'hashedPassword': False}
-                ) )
-                return result
-            except ValidationError as e:
-                raise AppError(f'Error from authUsecase.signIn: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
-
-        del cred.hashedPassword
-        try:
-            result = userCredentials( **cred )
-            return result
-        except ValidationError as e:
-            raise AppError(f'Error from authUsecase.signIn: Invalid return data. Details: {e}', 500)
+        return result
         
-    def signUp(self, data: manualSignUpRequest) -> userCredentials:
+    def signUp(self, data: manualSignUpRequest) -> str:
+        """
+            Returns the token for account activation.
+        """
+        # If account with this email already exists, don't proceed
         exists = self.userRepo.getUserCredentials(
-            userEmail = data.userEmail,
+            filter = {"userEmail": data.userEmail},
             projection = {'_id': True}
         )
         if exists is not None:
-            raise AppError('Error from authUsecase.signUp: user with this email already exists.')
+            raise AppError('Error from authUsecase.signUp: user with this email already exists.', 400)
         
+        # Hash the password, create an activation token, and store in DB
         hashcode = self.passwordHasher.hash(data.password)
+        token = secrets.token_urlsafe(128)
         result = self.userRepo.patchUserCredentials(
             user = {
                 'userEmail': data.userEmail,
                 'userName': data.userName,
-                'hashedPassword': hashcode
+                'hashedPassword': hashcode,
+                'signUpChoice': authChoice.MANUAL,
+                'createdTime': datetime.now(timezone.utc),
+                'activationToken': token
             },
-            email = data.userEmail,
+            filter = {'userEmail': data.userEmail},
             projection = {'hashedPassword': False}
         )
+        result['userID'] = str(result.pop('_id'))
 
+        # Check result returned by DB to be sure.
         try:
-            cred = userCredentials( **result )
+            normalUser( **result )
         except ValidationError as e:
             raise AppError(f'Error from authUsecase.signUp: Invalid userRepo.patchUserCredentials return data. Details: {e}', 500)
+        
+        # Finally, send account activation email that contains the activation token to client
+        subject = "Activate new account for First balance"
+        body = f"""\
+        <html>
+            <head></head>
+                <body>
+                    <p>Thank you for signing up to First balance.</p>
+                    <p>To be able to log in and fully use your account with this email, please click the account activation link below.</p>
+                    <p><a href="http://localhost:8081/activateAccount?token={token}">http://localhost:8081/activateAccount?token={token}</a></p>
+                    
+                    <p>If you cannot directly click the link, you can copy and paste it onto your browser's search bar as well.</p>
+                    <p>For security purposes, <b>the activation link will expire in 6 hours.</b> 
+                    <br></br>Your account will be deleted after that, but you may use the same email to sign up again.</p>
+                </body>
+        </html>"""
+        sender = "firstbalanceproject@gmail.com"
+        recipient = data.userEmail
 
-        return cred
+        sendEmail(subject=subject, body=body, sender=sender, recipients=recipient, requiresHTML=True)
+        
+        return token
+        
+    def activateAccount(self, token: str) -> normalUser:
+        exists = self.userRepo.getUserCredentials(
+            filter={'activationToken': token}, projection={'_id': True, 'activatedTime': True, 'userEmail': True}
+        )
+        if exists is None or ('activatedTime' in exists.keys() and exists['activatedTime'] is not None):
+            raise AppError("Error from authUsecase.activateAccount: user with this email doesn't exists, or has already activated their account.", 400)
+        
+        id = convertStrToObjectID(field=exists["_id"], fieldName='userID', originFuncName='authUsecase.activateAccount')
+        # delete "createdTime" field off the user credentials document to remove the TTL effect
+        # And delete "activationToken" too, since it has no more use
+        self.userRepo.deleteUserCredentials(fieldsToDelete=['createdTime', 'activationToken'], filter={'_id': id})
+        
+        try:
+            result = self.userRepo.patchUserCredentials(
+                user = {'activatedTime': datetime.now(timezone.utc)},
+                filter = {'_id': id}, 
+                projection = {'hashedPassword': False}
+            )
+            result['userID'] = str(result.pop('_id'))
+            result = normalUser( **result )
+            return result
+        except ValidationError as e:
+            raise AppError("Error from authUsecase.activateAccount: Invalid return data.", 500)
+        
+    def requestForgotPassword(self, data: forgotPasswordRequest) -> str:
+        """
+            Returns the token for password reset.
+        """
+        # Check if user with this email actually exists
+        exists = self.userRepo.getUserCredentials(
+            filter={'userEmail': data.userEmail}, projection={'_id': True}
+        )
+        if not exists:
+            raise AppError("Error from authUsecase.requestForgotPassword: User with this email doesn't exists.", 400)
+        
+        token = secrets.token_urlsafe(128)
+
+        # Put the token in DB
+        try:
+            result = self.userRepo.patchUserCredentials(
+                user = {'resetPasswordToken': token, 'resetPasswordExpireTime': datetime.now(timezone.utc) + timedelta(hours=6)},
+                filter = {'userEmail': data.userEmail},
+                projection = {'hashedPassword': False}
+            )
+            result['userID'] = str(result.pop('_id'))
+            result = normalUser( **result )
+        except ValidationError as e:
+            raise AppError(f"Error from authUsecase.requestForgotPassword: Invalid userRepo.patchUserCredentials return data. Details: {e}", 500)
+        
+        # Send email to client to reset password
+        subject = "Reset your First balance account password"
+        body = f"""\
+        <html>
+            <head></head>
+                <body>
+                    <p>Please click the link below to reset your password.</p>
+                    <p><a href="http://localhost:8081/resetPassword?token={token}">http://localhost:8081/resetPassword?token={token}</a></p>
+                    
+                    <p>If you cannot directly click the link, you can copy and paste it onto your browser's search bar as well.</p>
+                    <p>For security purposes, <b>the link will expire in 6 hours.</b> 
+                    <br></br>You may request for password reset email again after that.</p>
+                </body>
+        </html>"""
+        sender = "firstbalanceproject@gmail.com"
+        recipient = data.userEmail
+
+        sendEmail(subject=subject, sender=sender, recipients=recipient, body=body, requiresHTML=True)
+
+        return token
+    
+    def resetPassword(self, data: resetPasswordRequest, token: str) -> normalUser:
+        exists = self.userRepo.getUserCredentials(
+            filter={'resetPasswordToken': token},
+            projection={'_id': True, 'resetPasswordExpireTime': True}
+        )
+
+        if not exists:
+            raise AppError("Error from authUsecase.resetPassword: Token invalid, or user doesn't exists, or hasn't requested for password reset token yet.", 400)
+        
+        present = datetime.now(timezone.utc)
+        if exists['resetPasswordExpireTime'] < present:
+            raise AppError("Error from authUsecase.resetPassword: The window to reset password has expired.", 400)
+        
+        hashcode = self.passwordHasher.hash(data.newPassword)
+        self.userRepo.deleteUserCredentials(
+            filter={'_id': exists['_id']},
+            fieldsToDelete=['resetPasswordExpireTime', 'resetPasswordToken'],
+            projection={'hashedPassword': False}
+        )
+        result = self.userRepo.patchUserCredentials(
+            user = {'hashedPassword': hashcode},
+            filter = {'_id': exists['_id']},
+            projection={'hashedPassword': False}
+        )
+        result['userID'] = str(result.pop('_id'))
+
+        try:
+            result = normalUser( **result )
+            return result
+        except ValidationError as e:
+            raise AppError("Error from authUsecase.resetPassword: Invalid return data.", 500)
+
         
     def logout(self) -> None:
-        key = f"session:{session.sid}"
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from authUsecase.logout: Invalid session format, likely because user is not authenticated.', 401)
+        
         session.clear()
-        self.redisSession.delete(key)
+        self.redisSession.delete(f"session:{session.sid}")
+
+    def deleteAccount(self, userID: str) -> normalUser:
+        sessionType = checkSessionType(dict(session))
+        if sessionType != "postLogin":
+            raise AppError('Error from authUsecase.deleteAccount: Invalid session format, likely because user is not authenticated.', 401)
+        
+        id = convertStrToObjectID(field=userID, fieldName='userID', originFuncName='authUsecase.deleteAccount')
+        try:
+            result = self.userRepo.deleteUserCredentials(filter={'_id': id}, projection={'hashedPassword': False})
+            result['userID'] = str(result.pop('_id'))
+            cred = normalUser( **result )
+            return cred
+        except ValidationError as e:
+            raise AppError("Error from authUsecase.deleteAccount: Invalid return data.", 500)
+            raise AppError("Error from authUsecase.deleteAccount: Invalid return data.", 500)

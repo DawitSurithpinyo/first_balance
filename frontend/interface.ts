@@ -38,8 +38,20 @@ export interface userCredentials {
     TokenURI?: string,
     ClientID?: string,
     GrantedScopes?: string[],
-    Salt?: string, // for manual sign-in/sign-up
     HashedPassword?: string // for manual sign-in/sign-up
 }
 // when user hasn't logged in yet or logged out, the credentialsContext that keeps userCredentials will be
 // {'UserEmail': '', 'UserName': ''}
+
+export interface successResponse<T = unknown> {
+    success: boolean,
+    message: string,
+    data?: T,
+    timestamp: string
+}
+
+export interface failureResponse {
+    success: boolean,
+    error: string,
+    timestamp: string
+}
