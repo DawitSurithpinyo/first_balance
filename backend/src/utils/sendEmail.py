@@ -4,6 +4,8 @@ import ssl
 from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
+from flask_limiter import RateLimitExceeded
+from src.types.error.AppError import AppError
 
 
 def sendEmail(subject: str, sender: str, recipients: str | list[str], 

@@ -13,9 +13,6 @@ class manualSignUpRequest(BaseModel, extra='forbid'):
     userName: str
     password: str
 
-class activateAccountRequest(BaseModel, extra='forbid'):
-    userID: str
-
 class forgotPasswordRequest(BaseModel, extra='forbid'):
     userEmail: str
 

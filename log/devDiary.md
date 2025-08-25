@@ -61,3 +61,31 @@
 - API route for Google OAuth login route is fully working.
 - Finish implementing CSRF prevention and unauthenticated API access prevention in authMiddleware.
     - CSRF prevention by [synchronizing token pattern](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#synchronizer-token-pattern).
+
+## 31 July - 13 August
+- Implement the rest of endpoints for user credentials and transactions data.
+- Restructure Pydantic models.
+
+    - Better checking of attributes: absolutely no extra fields allow, functions to validate formats of date fields.
+    - For simplicity and security (complexity may lead to vulnerabilities), user signing up with Google OAuth and manual sign up will now result in separate accounts. Pydantic models for these two are separate now.
+
+- Remove caching system, as there is currently no need for it.
+- Impose new rules for datetime: All operations producing/manipulating datetime needs UTC (`+00:00` or `Z`), for standardization, maintainability, and compatibility with libraries interacting with datetime.
+
+    - For logging/displaying: ISO 8601 format `str` e.g. `datetime.now(timezone.utc).isoformat()`.
+    - For other purposes (DB storage, etc): just `datetime` object e.g. `datetime.now(timezone.utc)`.
+
+- Restructure initialization of controllers, usecases, repositories, the app running file (`run.py`), and `appSetup.py` 
+    - Follow proper dependency injection pattern: Take dependencies from classes constructors. Then in `appSetup.py`, take created app and all the utils:
+        - Supply them to repos (and/or usecases when necessary), inject repos to usecases, inject usecases to controllers.
+
+- Add a util function to send simple text/HTML email for account activation and reset password emails. Done over SMTP protocol, TLS, and `smtp.gmail.com` mail server.
+    - (Some of the) sources:
+        - https://mailtrap.io/blog/python-send-email-gmail/#Send-email-in-Python-using-Gmail-SMTP
+        - https://stackoverflow.com/questions/57715289/how-to-fix-ssl-sslerror-ssl-wrong-version-number-wrong-version-number-ssl
+- Add an index for `createdTime` field in user credentials documents in MongoDB, with `expireAfterSeconds` and `sparse` property.
+
+    - This is for account activation after manual sign up. User sign up -> record `createdTime` as datetime -> if user don't activate within 6 hours, delete the document.
+    - `expireAfterSeconds`: impose 6 hours TTL on documents
+    - `sparse`: Any document without `createdTime` field will not be subjected to the 6 hours TTL, AKA documents for accounts already activated.
+    - Documents for user signing up via Google OAuth are not subjected to this, only manual sign up.

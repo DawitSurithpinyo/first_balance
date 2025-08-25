@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pydantic import BaseModel, field_validator
-from src.types.enum import authChoice
+from src.types.enums.authChoice import authChoice
 from src.types.error.AppError import AppError
 
 

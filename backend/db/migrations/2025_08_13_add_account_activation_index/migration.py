@@ -1,6 +1,6 @@
 from config.flaskConfig import DevConfig
 from pymongo import MongoClient
-from src.types.enum import authChoice
+from src.types.enums.authChoice import authChoice
 
 client = MongoClient( **DevConfig.MONGO_CONFIGS )
 db = client['userCredsDB']

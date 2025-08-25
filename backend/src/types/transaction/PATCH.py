@@ -1,6 +1,8 @@
 from datetime import datetime
 
 from pydantic import BaseModel, field_validator
+from src.types.enums.responseCodes.pydanticValidate import \
+    pydanticValidationResponses
 from src.types.error.AppError import AppError
 
 
@@ -23,4 +25,5 @@ class partialTransaction(BaseModel, extra='forbid'):
                 datetime.fromisoformat(v)
                 return v
             except Exception as e:
-                raise AppError(f'Error while creating updateTransactionRequest model: expect ISO format str for the "date" field when it is supplied. Details: {e}', 400)
+                raise AppError(f'Error while creating updateTransactionRequest model: expect ISO format str for the "date" field when it is supplied. Details: {e}',
+                               pydanticValidationResponses.ERROR_INVALID_DATE_FIELDS_FORMAT, 400)

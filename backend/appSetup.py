@@ -6,6 +6,7 @@ from config.flaskConfig import *
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
+from flask_limiter import Limiter
 from flask_session import Session
 from pymongo import MongoClient
 from redis import Redis
@@ -14,6 +15,7 @@ from src.controllers.transactionController import transactionController
 from src.middleware import authMiddleware
 from src.repositories.transactionRepo import transactionRepository
 from src.repositories.userRepo import userRepository
+from src.types.enums.responseCodes.setup import appSetupResponses
 from src.usecases.authUsecase import authUsecase
 from src.usecases.transactionUsecase import transactionUsecase
 
@@ -34,7 +36,8 @@ def createApp(config) -> Flask:
         with app.app_context():
             return jsonify({
                 "success": False,
-                "error": f"Internal server error on initiating server config: {e}",
+                "message": f"Internal server error on initiating server config: {e}",
+                "messageCode": appSetupResponses.INTERNAL_SERVER_ERROR,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
 
@@ -57,14 +60,15 @@ def initInfra(config) -> tuple[Redis, MongoClient]:
     except Exception:
         print("Error while setting up MongoDB and Redis for Session: ")
         traceback.print_exc()
+        print(f"Message code: {appSetupResponses.INTERNAL_SERVER_ERROR}")
         print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
 
     return sessionRedis, mongoClient
 
 
-def initAppAddOns(app: Flask, config) -> PasswordHasher:
+def initAppAddOns(app: Flask, config) -> tuple[PasswordHasher, Limiter]:
     """
-        Add Session, CORS, and Argon2 PasswordHasher. Return `passwordHasher`.
+        Add Session, CORS, Argon2 PasswordHasher, and API limiter. Return `passwordHasher` and `Limiter`.
 
         Please supply config with any classes from `config/flaskConfig.py`, except `BaseConfig`.
     """
@@ -80,7 +84,9 @@ def initAppAddOns(app: Flask, config) -> PasswordHasher:
         else:
             passwordHasher = PasswordHasher()
 
-        return passwordHasher
+        limiter = Limiter( app=app, **config.LIMITER_CONFIGS )
+
+        return passwordHasher, limiter
     
     except Exception as e:
         print("Error while setting up app Session and CORS: ")
@@ -88,7 +94,8 @@ def initAppAddOns(app: Flask, config) -> PasswordHasher:
         with app.app_context():
             return jsonify({
                 "success": False,
-                "error": f"Internal server error on setting up app Session and CORS: {e}",
+                "message": f"Internal server error on setting up app Session and CORS: {e}",
+                "messageCode": appSetupResponses.INTERNAL_SERVER_ERROR,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
 
@@ -102,17 +109,20 @@ def initMiddlewares(app: Flask) -> None:
         with app.app_context():
             return jsonify({
                 "success": False,
-                "error": f"Internal server error on setting up auth middleware: {e}",
+                "message": f"Internal server error on setting up auth middleware: {e}",
+                "messageCode": appSetupResponses.INTERNAL_SERVER_ERROR,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
 
 
-def initViews(app: Flask, sessionRedis: Redis, mongoClient: MongoClient, passwordHasher: PasswordHasher) -> None:
+def initViews(app: Flask, sessionRedis: Redis, mongoClient: MongoClient, 
+              passwordHasher: PasswordHasher, limiter: Limiter) -> None:
     try:
         userRepo = userRepository(mongo=mongoClient, redisSession=sessionRedis)
         transacRepo = transactionRepository(mongo=mongoClient)
 
-        authUsecases = authUsecase(userRepo=userRepo, flaskApp=app, redisSession=sessionRedis, pwHasher=passwordHasher)
+        authUsecases = authUsecase(userRepo=userRepo, flaskApp=app, redisSession=sessionRedis, 
+                                   pwHasher=passwordHasher, limiter=limiter)
         transacUsecases = transactionUsecase(transactionRepo=transacRepo)
 
         authControl = authController(useCase=authUsecases)
@@ -128,6 +138,7 @@ def initViews(app: Flask, sessionRedis: Redis, mongoClient: MongoClient, passwor
         with app.app_context():
             return jsonify({
                 "success": False,
-                "error": f"Internal server error on setting up Flask views (API routes) {e}",
+                "message": f"Internal server error on setting up Flask views (API routes) {e}",
+                "messageCode": appSetupResponses.INTERNAL_SERVER_ERROR,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500

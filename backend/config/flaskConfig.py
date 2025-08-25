@@ -1,6 +1,7 @@
 import os
 
 from dotenv import load_dotenv
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 class BaseConfig(object):
@@ -34,3 +35,14 @@ class DevConfig(BaseConfig):
         "tz_aware": True
     }
     SESSION_REDIS_URL = os.getenv('DEV_SESSION_REDIS_URL', 'no session Redis url')
+
+    LIMITER_CONFIGS = {
+        "key_func": get_remote_address,
+        "default_limits": ['300 per day', '5 per second'],
+        "meta_limits": ['3 per day'],
+        "headers_enabled": True,
+        "storage_uri": os.getenv('DEV_DATABASE_URL', 'no MongoDB url'),
+        "storage_options": {
+            "tz_aware": True
+        }
+    }

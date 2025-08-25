@@ -1,7 +1,5 @@
 ### This is for things not fitting in log/devDiary.md (not new "updates" or "commits"), but ones I want to take note anyway.
 
-TO NOTE:
-
 ## OOP
 ### When is OOP/design patterns appropriate?
 - Unless it's something small i.e., scripts for automation on a small part/system, it's often beneficial to use OOP. 
@@ -70,7 +68,7 @@ First, a common misconception between singleton and "single instance":
 - Another example: Sensitive API endpoints need to check that the users making requests are authenticated and authorized before allowing them. We can add a "middleware" that checks security matters. If the check pass, let the requests go to destination endpoints.
 
 
-## Architecture
+## Software architecture
 ### stateful vs stateless software
 - Stateful is when the *server* stores information about the client in each session. Stateless is of course the opposite i.e., you make the client (user's browser) store all current session's information in cookies or headers.
     - Pros of stateful:
@@ -82,6 +80,8 @@ First, a common misconception between singleton and "single instance":
 - Front-end/UI has nothing to do with "stateful" or "stateless." Even if the front-end can "keep" user's selected products in cart via React context (for example), it's just going to disappear once the user close the tab. There is no session on a server to store those information.
 - Note that "stateful" vs "stateless" can be used for network protocols too. For example, HTTP is a stateless application-layer protocol, because each HTTP requests are independent of each other. For example, request $n$ doesn't know anything about request $n-1$.
 
+## Computer architecture
+Some of these don't really have anything to do with web app dev/this project but I don't really care.
 ### Multithreading, concurrency, parallelism, and asynchrony
 - "Thread": pretty difficult to explain intuitively or what it means exactly. See answers from https://stackoverflow.com/questions/5201852/what-is-a-thread-really.
 - Concurrency: computer executing $>1$ tasks by quickly switching between them from start to finish, but NOT doing more than one task AT ONCE. A bit like one counter, with one cashier, serving two lines of customer; this counter can serve more than one lines, but the cashier CANNOT take more than one person at a time.
@@ -96,6 +96,8 @@ First, a common misconception between singleton and "single instance":
 - Sources:
     - https://www.reddit.com/r/learnprogramming/comments/rg77v4/concurrency_vs_asynchronous/
     - https://stackoverflow.com/questions/4844637/what-is-the-difference-between-concurrency-parallelism-and-asynchronous-methods
+
+### Buffer vs "the stack" vs "the heap"
 
 ## Database
 ### When to use SQL vs NoSQL
@@ -116,7 +118,7 @@ First, a common misconception between singleton and "single instance":
 ### What is an ORM (Object-Relational Mapping) tool?
 - SQL/relational databases are very popular, but as it scales up, with more and more schema definitions and tables, it becomes harder to query and maintain relations.
 - We can use the idea of OOP, where we represent entities as objects with relationships. But to mimic that in SQL DB, we'd have to create a set of tables mimicking objects and their relations, which can be hard.
-- So that's exactly what an ORM tool does for you. We just need to define "Models" (classes with relationships), and the ORM tool will automatically map it to valid SQL tables, relationships, and types. Querying also becomes much easier, as all you need to do are select the right function from the ORM library and supply correct parameters and values to query. The ORM will do `WITH(...) AS xx, SELECT ...` or whatever queries necessary for you.
+- So that's exactly what an ORM tool does for you. We just need to define "Models" (classes with attributes and relationships), and the ORM tool will automatically map it to valid SQL tables, relationships, and types. Querying also becomes much easier, as all you need to do is select the right function from the ORM library and supply correct parameters and values to query. The ORM will do `WITH(...) AS xx, SELECT ...` or whatever queries necessary for you.
     - This can speed up development time.
     - Come to think about it, MongoDB (ironically NoSQL) interfaces for usage and querying already feels like it's inherently designed to "mimic" ORM.
 - That being said:
@@ -129,16 +131,104 @@ First, a common misconception between singleton and "single instance":
     - https://dev.to/cies/the-case-against-orms-5bh4
     - Some other articles I lost track of
 
+### MongoDB
+- It is possible to create indexes for custom effects (TTL, sparse, etc). However, for [index as static fields mapping](https://www.mongodb.com/docs/guides/search/static/) (custom indexes specifically for efficient searching), you'll need Atlas.
+    - See: https://www.mongodb.com/docs/manual/indexes/
+- Need to supply argument `tz_aware = True` in `MongoClient()`, or else when the DB returns fields in documents that has value of date type, they will not be timezone-aware (even if it was timezone-aware before being put into DB).
+
+### Relational DBs
+#### "Join table" for one-to-many, many-to-one, and many-to-many relationships
+- Problem: Say you have to store items in the agenda of events in SQL DBs. You can make an events table, with each row = an event, then store the agenda's items in a column. But what if it has more than one item, or complex details? For example:
+```
+13:00 - 13:30 Registration
+13:40 - 14:20 Speaker 1
+14:20 - 15:00 Speaker 2
+...
+```
+- This is one-to-many; there can be more than one items for an event. Plus:
+    - We can't fix or know beforehand the amount of items for all events. So it's not like we can just do columns item1, item2, ... .
+    - There are start time, end time, and description for each item, so a `TEXT` column clearly doesn't suffice.
+- Solution 1: JSON column. Supported by many SQL DB providers, and you can go freestyle in the column. 
+    - **Problems**: Cannot define schema within the JSON column (so I can insert invalid item, for example). This also means foreign keys constraint cannot be imposed.
+    - Keeping things in array/list column also has similar problems.
+    - Syntax/querying is also quite messy
+- Solution 2: Entity-Attribute-Value (EAV) design
+    - Rather than creating a table for an entity, use one table for one *attribute* or *type*.
+    - Say you want to represent these objects as DB schema:
+```typescript
+interface book = {
+    name: string
+    isbn: number
+}
+interface people = {
+    name: string
+    number_of_friends: number
+}
+```
+
+- You can define `number_attribute` and `string_attribute` as two tables, then a table to put objects (book, people, or other things):
+```sql
+CREATE TABLE objects (
+   objectid bigint PRIMARY KEY
+   /* other object-level properties */
+);
+
+CREATE TABLE attstring (
+   objectid bigint
+      REFERENCES objects ON DELETE CASCADE NOT NULL,
+   attname text NOT NULL,
+   attval text,
+   PRIMARY KEY (objectid, attname)
+);
+
+CREATE TABLE attint (
+   objectid bigint
+      REFERENCES objects ON DELETE CASCADE NOT NULL,
+   attname text NOT NULL,
+   attval integer,
+   PRIMARY KEY (objectid, attname)
+);
+
+/* more tables for other data types */
+```
+- Then you can put `book` or `people` objects in the `objects` table. The `name` attributes of them in `attstring` table, `isbn` and `number_of_friends` in `attint`.
+    - **Problems**: Bad performance-wise i.e., need to interact with many rows/tables just to `INSERT` or update, complicate queries.
+    - Source: https://www.cybertec-postgresql.com/en/entity-attribute-value-eav-design-in-postgresql-dont-do-it/
+- Solution 3: A "join table". Make a separate table i.e., "events_agendas" with each row being one item of an event's agenda.
+
+| id    | event_id      | item_start_time   | item_end_time     | description       |
+| ----- | ------------- | ----------------- | ----------------- | ----------------- |
+| uuid  | 123           | 13:00             | 13:30             | Registration      |
+| uuid  | 123           | 13:40             | 14:20             | Speaker 1         |
+| uuid  | 123           | 14:20             | 15:00             | Speaker 2         |
+| uuid  | 456           | 9:00              | 10:00             | Introduction      |
+| ...   | ...           | ...               | ...               | ...               |
+
+- Why it's the best for this situation: Simple, clear and enforcable schema (so foreign keys on `event_id` is possible too). You can directly `SELECT item_start_time, item_end_time, description FROM events_agendas WHERE event_id = $1`, or at most just need some `JOIN`s.
+- Source: https://www.sqltutorial.net/sql-many-to-many-relationship.html
+
 ## Flask
-- Flask application context
+- Flask [application context](https://flask.palletsprojects.com/en/stable/appcontext/)
+    - When you need to modify or access any resources that belongs to the app, such as configs, during runtime, do so through `with app.app_context():`.
+        - For example, to access and use the DB you supply to Flask-Caching, you need to set `cache = Cache(app)` first, then use the `cache` as proxy to the DB. However, since it belongs to the `app`, you'll need the app context.
+        - But, for Flask-Session, since you actually need to create specific DB instance before pointing `Session` to it, you do have direct access to the DB instance. So to use the session DB you don't actually need the context.
 - Flask-Session
 - Flask-Caching
+    - You do need the `cache` object from `cache = Cache(app)`, but you can either use it as a decorater, or directly use it (`cache.set()`, `cache.get()`, etc).
 - Flask-CORS
+    - `expose_headers`: Specifying custom headers that should/could expose to the client
+    - `allow_headers`: Custom headers we can accept from the client
 - setting response object via `@after_this_request` decorator
+    - You can define an internal function inside a route that binds to this `@after_this_request` decorator. Then pass a `response` argument to it, you can directly modify the response without having to touch the object you will return from the route.
+    - Example in documentation shows we can attach custom header to the response: https://flask.palletsprojects.com/en/stable/api/#flask.after_this_request
 - [Security considerations](https://flask.palletsprojects.com/en/stable/web-security/#security-considerations)
 
 ## HTTP
 - HTTP cookies vs other headers (difference, use cases, security implications, etc)
+    - Cookie IS one of the HTTP headers. Each header have different functions/purposes. 
+    - Cookies are pairs of keys and values in a header that the client use specifically to identify itself to the server. The server can always modify the cookies (***BUT cannot delete the cookies off the user's browser***).
+        - Since it's used for the server to identify the user, cookies are ***automatically sent to the server every HTTP request***, and have expiration time (defined by the server).
+    - ***Cookies from a web are kept browser-wide***. So there could be a session-fixation problem; user may be forced to one session (thus one account) in a web per browser. But there are some possible solutions, I believe.
 ### HTTP status code 401 vs 403
 - 401 (unauthorized): the request lacks valid authentication credentials for the target resources. *If the request includes authentication credentials, then 401 means*  ***the server refused authorization for those credentials.***
     - So 401 is better for invalid CSRF token. The credential (CSRF token) is there, but it's not valid. ***The server refused authorization for that CSRF token.***
@@ -149,15 +239,29 @@ First, a common misconception between singleton and "single instance":
 
 - [Source](https://datatracker.ietf.org/doc/html/rfc9110#name-client-error-4xx)
 
-## SMTP
+## SMTP, IMAP
+- SMTP (simple mail transfer protocol): A protocol to **send email from users to mail servers** i.e., `smtp.gmail.com`. It has overall flow similar to HTTPS: start connection (`HELO/EHLO`, DNS resolution, and establishing TLS), parse and send (`MAIL FROM, RCPT TO, DATA, ...`), and close connections.
+    - Port to forward mail over SMTP + TLS is `587`.
+- IMAP (Internet message access protocol): To **deliver the mails from the mail servers to recipients**. Nowadays normal end users typically don't directly interact with IMAP, they just use HTTP + some web/app interfaces i.e., Gmail to recieve/manage their emails instead.
 
 ## cache vs session vs cookies
 - Store in cookies (client-side session) vs session vs in Redis cache? (Efficiency, security implications, etc)
 
 ## Security
-### Authentication vs authorization
+### encoding vs encryption
+- Both transform data from one format to another.
+    - However, for encoding, both transform and reverse transform use 100% public schemes. ***No parts of them are secrets***, because the purpose is to build universal standards to convert different data i.e., text, audio, image, etc. into machine-readable code (and reverse, of course), so as to allow efficient transmissions.
+        - Put simply, it's for data maintainability, ***NOT FOR SECURITY***.
+    - For encryption, ***everything about the algorithms are public too, except the keys required to transform and reverse transform***. This is to make sure only the sender and intended recipients can read the data.
+        - Put simply, it's for data confidentiality (security).
+- Main source: https://stackoverflow.com/questions/4657416/difference-between-encoding-and-encryption
 
-### The same origin policy and CORS
+### Authentication vs authorization
+- Authentication: Verifying that an entity (person/computer/software/whatever) is indeed who it says it is. Example: Typing password to log into your Google account, proving that it's really you.
+- Authorization: Verifying that an entity has the right to access resources requested. Example: If you're not an admin of a DB (maybe only data reader), then you do not have the rights to delete the DB.
+    - This is usually done after authentication, because before you can check whether this entity has the right to access something, you need to check first if its identity is legit.
+
+### Same Origin Policy (SOP) and Cross-Origin Resource Sharing (CORS)
 
 ### OAuth (Open Authorization)
 - Google OAuth `flow.redirect_uri` is which one? `postmessage` or actual redirect uri registered in the Google cloud console?
