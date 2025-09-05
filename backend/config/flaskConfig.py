@@ -38,8 +38,9 @@ class DevConfig(BaseConfig):
 
     LIMITER_CONFIGS = {
         "key_func": get_remote_address,
-        "default_limits": ['300 per day', '5 per second'],
-        "meta_limits": ['3 per day'],
+        "default_limits": ['4 per second'], # individually apply to all routes
+        "application_limits": ['500 per day'], # shared limit across all routes
+        "meta_limits": ['5 per day'], # how many times client can hit any defined limits
         "headers_enabled": True,
         "storage_uri": os.getenv('DEV_DATABASE_URL', 'no MongoDB url'),
         "storage_options": {

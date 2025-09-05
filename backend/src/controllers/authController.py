@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from flask import after_this_request, jsonify, redirect, request, session
 from flask_classful import FlaskView, route
+from flask_limiter import Limiter, RateLimitExceeded
 from pydantic import ValidationError
 from src.types.auth.DELETE import deleteAccountRequest
 from src.types.auth.POST import (forgotPasswordRequest, googleLoginRequest,
@@ -15,8 +16,17 @@ from src.usecases.authUsecase import authUsecase
 
 
 class authController(FlaskView):
-    def __init__(self, useCase: authUsecase):
-        self.authUsecase = useCase
+    def __init__(self, args: dict):
+        try:
+            self.authUsecase: authUsecase = args["useCase"]
+            self.limiter: Limiter = args["limiter"]
+
+            assert self.authUsecase is not None and isinstance(self.authUsecase, authUsecase)
+            assert self.limiter is not None and isinstance(self.limiter, Limiter)
+
+        except Exception as e:
+            print(f"Error while constructing authController(): {e}")
+            traceback.print_exc()
     
     @route("/googleLogin", methods=['POST'])
     def googleLogin(self):
@@ -63,39 +73,45 @@ class authController(FlaskView):
     @route("/getCredentials", methods=['GET'])
     def getCredentials(self):
         try:
-            data, sessionDescription = self.authUsecase.retrieveCredentials()
-            @after_this_request
-            def addCSRFTokenHeader(response):
-                response.headers["X-CSRF-Token"] = session["CSRFToken"]
-                return response
+            with self.limiter.limit('1 per 2 seconds'): # too strict? But refreshes usually take at least 2 seconds, and legit users would have no incentive to spam refresh
+                try:
+                    data, sessionDescription = self.authUsecase.retrieveCredentials()
+                    @after_this_request
+                    def addCSRFTokenHeader(response):
+                        response.headers["X-CSRF-Token"] = session["CSRFToken"]
+                        return response
 
-            if sessionDescription == "newPreLogin":
-                redirect('/')
-                return jsonify({
-                    "success": True,
-                    "message": "Created a new pre-login session with a new CSRF token.",
-                    "messageCode": authResponses.getCredentials.SUCCESS_NEW_PRELOGIN_SESSION,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }), 201
-            
-            elif sessionDescription == "existingPreLogin":
-                redirect('/')
-                return jsonify({
-                    "success": True,
-                    "message": "Retrieved the CSRF token of existing pre-login session.",
-                    "messageCode": authResponses.getCredentials.SUCCESS_EXISTING_PRELOGIN_SESSION,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }), 200
-            
-            elif sessionDescription == "postLogin":
-                redirect('/dashboard')
-                return jsonify({
-                    "success": True,
-                    "message": "Retrieved the credentials of existing post-login session.",
-                    "messageCode": authResponses.getCredentials.SUCCESS_EXISTING_POSTLOGIN_SESSION,
-                    "data": data.model_dump(exclude_none=True),
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }), 200
+                    if sessionDescription == "newPreLogin":
+                        redirect('/')
+                        return jsonify({
+                            "success": True,
+                            "message": "Created a new pre-login session with a new CSRF token.",
+                            "messageCode": authResponses.getCredentials.SUCCESS_NEW_PRELOGIN_SESSION,
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }), 201
+                    
+                    elif sessionDescription == "existingPreLogin":
+                        redirect('/')
+                        return jsonify({
+                            "success": True,
+                            "message": "Retrieved the CSRF token of existing pre-login session.",
+                            "messageCode": authResponses.getCredentials.SUCCESS_EXISTING_PRELOGIN_SESSION,
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }), 200
+                
+                    elif sessionDescription == "postLogin":
+                        redirect('/dashboard')
+                        return jsonify({
+                            "success": True,
+                            "message": "Retrieved the credentials of existing post-login session.",
+                            "messageCode": authResponses.getCredentials.SUCCESS_EXISTING_POSTLOGIN_SESSION,
+                            "data": data.model_dump(exclude_none=True),
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }), 200
+                    
+                except RateLimitExceeded as e:
+                    raise AppError(f'Route rate limit exceeded. Details: {e}',
+                                authResponses.getCredentials.ERROR_RATE_LIMIT_EXCEEDED, 429)
             
         except Exception as e:
             print(f"Error on authController.getCredentials: ")
@@ -113,29 +129,36 @@ class authController(FlaskView):
                 "messageCode": authResponses.getCredentials.INTERNAL_SERVER_ERROR,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }), 500
-        
+    
     @route("/signIn", methods=['POST'])
     def signIn(self):
-        try:
-            try:
-                data = manualSignInRequest( **request.get_json() )
-            except ValidationError as e:
-                raise AppError(f'Invalid request body for api/auth/signIn: {e}', 
-                               authResponses.signIn.ERROR_INVALID_REQUEST_BODY, 400)
+        # What the hell is this. But I mean there is no other way to do it
+        try: # any Exceptions
+            with self.limiter.limit('10 per minute'):
+                try: # limiter exception
+                    try: # Pydantic exception
+                        data = manualSignInRequest( **request.get_json() )
+                    except ValidationError as e:
+                        raise AppError(f'Invalid request body for api/auth/signIn: {e}', 
+                                    authResponses.signIn.ERROR_INVALID_REQUEST_BODY, 400)
 
-            result: normalUser = self.authUsecase.signIn(data=data)
-            @after_this_request
-            def addCSRFTokenHeader(response):
-                response.headers["X-CSRF-Token"] = session["CSRFToken"]
-                return response
-            
-            return jsonify({
-                "success": True,
-                "message": "Signed in.",
-                "messageCode": authResponses.signIn.SUCCESS,
-                "data": result.model_dump(exclude_none=True),
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }), 201
+                    result: normalUser = self.authUsecase.signIn(data=data)
+                    @after_this_request
+                    def addCSRFTokenHeader(response):
+                        response.headers["X-CSRF-Token"] = session["CSRFToken"]
+                        return response
+                    
+                    return jsonify({
+                        "success": True,
+                        "message": "Signed in.",
+                        "messageCode": authResponses.signIn.SUCCESS,
+                        "data": result.model_dump(exclude_none=True),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }), 201
+                
+                except RateLimitExceeded as e:
+                    raise AppError(f'Route rate limit exceeded. Details: {e}',
+                                   authResponses.signIn.ERROR_RATE_LIMIT_EXCEEDED, 429)
         
         except Exception as e:
             print("Error on authController.signIn controller: ")
@@ -156,21 +179,27 @@ class authController(FlaskView):
     
     @route("/signUp", methods=['POST'])
     def signUp(self):
-        try:
-            try:
-                data = manualSignUpRequest( **request.get_json() )
-            except ValidationError as e:
-                raise AppError(f'Invalid request body for api/auth/signUp: {e}',
-                               authResponses.signUp.ERROR_INVALID_REQUEST_BODY, 400)
-            
-            token: str = self.authUsecase.signUp(data=data)
-            return jsonify({
-                "success": True,
-                "message": "Signed up with the following account activation token and an activation email sent to client.",
-                "messageCode": authResponses.signUp.SUCCESS,
-                "data": token,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }), 201
+        try: # any Exceptions
+            with self.limiter.limit('1 per 10 seconds'):
+                try: # limiter exception
+                    try:
+                        data = manualSignUpRequest( **request.get_json() )
+                    except ValidationError as e:
+                        raise AppError(f'Invalid request body for api/auth/signUp: {e}',
+                                    authResponses.signUp.ERROR_INVALID_REQUEST_BODY, 400)
+                    
+                    token: str = self.authUsecase.signUp(data=data)
+                    return jsonify({
+                        "success": True,
+                        "message": "Signed up with the following account activation token and an activation email sent to client.",
+                        "messageCode": authResponses.signUp.SUCCESS,
+                        "data": token,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }), 201
+                
+                except RateLimitExceeded as e:
+                    raise AppError(f'Rate limit exceeded. Details: {e}'
+                           , authResponses.signUp.ERROR_RATE_LIMIT_EXCEEDED, 429)
 
         except Exception as e:
             print("Error on authController.signUp: ")
@@ -226,21 +255,27 @@ class authController(FlaskView):
         
     @route("/requestForgotPassword", methods=['POST'])
     def requestForgotPassword(self):
-        try:
-            try:
-                data = forgotPasswordRequest( **request.get_json() )
-            except ValidationError as e:
-                raise AppError(f"Invalid request body for api/auth/requestForgotPassword: {e}",
-                               authResponses.requestForgotPassword.ERROR_INVALID_REQUEST_BODY, 400)
-            
-            token: str = self.authUsecase.requestForgotPassword(data=data)
-            return jsonify({
-                "success": True,
-                "message": "Request to reset password activated with the following token.",
-                "messageCode": authResponses.requestForgotPassword.SUCCESS,
-                "data": token,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }), 201
+        try: # any Exceptions
+            with self.limiter.limit('1 per 10 seconds'):
+                try: # limiter exception
+                    try:
+                        data = forgotPasswordRequest( **request.get_json() )
+                    except ValidationError as e:
+                        raise AppError(f"Invalid request body for api/auth/requestForgotPassword: {e}",
+                                    authResponses.requestForgotPassword.ERROR_INVALID_REQUEST_BODY, 400)
+                    
+                    token: str = self.authUsecase.requestForgotPassword(data=data)
+                    return jsonify({
+                        "success": True,
+                        "message": "Request to reset password activated with the following token.",
+                        "messageCode": authResponses.requestForgotPassword.SUCCESS,
+                        "data": token,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }), 201
+                
+                except RateLimitExceeded as e:
+                    raise AppError(f'Rate limit exceeded. Details: {e}'
+                           , authResponses.requestForgotPassword.ERROR_RATE_LIMIT_EXCEEDED, 429)
         
         except Exception as e:
             print("Error on authController.requestForgotPassword: ")
@@ -336,13 +371,12 @@ class authController(FlaskView):
                 raise AppError(f'Invalid request body for api/auth/deleteAccount: {e}',
                                authResponses.deleteAccount.ERROR_INVALID_REQUEST_BODY, 400)
             
-            result: normalUser = self.authUsecase.deleteAccount(userID=data.userID)
+            self.authUsecase.deleteAccount(userID=data.userID)
             # redirect("/")
             return jsonify({
                 "success": True,
-                "message": "The following account is deleted.",
+                "message": "Account deleted.",
                 "messageCode": authResponses.deleteAccount.SUCCESS,
-                "data": result.model_dump(exclude_none=True),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }), 200
 

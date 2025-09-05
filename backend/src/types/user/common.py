@@ -81,10 +81,9 @@ class normalUserWithPassword(normalUser, extra='forbid'):
 
 class googleUser(baseUser, extra='forbid'):
     """
-        For users who sign up by Google OAuth
+        For users who sign up by Google OAuth.
+        Access token, refresh token, and granted scopes depends on each sign in, so keeping in Redis server session instead of DB.
+        Also because of security concerns.
     """
     signUpChoice: authChoice = authChoice.GOOGLE
     userPictureLink: str
-    accessToken: str
-    refreshToken: str
-    grantedScopes: list[str] | None = None

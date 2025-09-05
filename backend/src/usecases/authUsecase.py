@@ -6,10 +6,10 @@ import google_auth_oauthlib.flow
 from argon2 import PasswordHasher, exceptions
 from config.googleOAuthConfig import DEV_CLIENT_SECRETS_FILE, SCOPES
 from flask import Flask, current_app, request, session
-from flask_limiter import Limiter, RateLimitExceeded
 from googleapiclient.discovery import build
 from pydantic import ValidationError
 from redis import Redis
+from src.repositories.transactionRepo import transactionRepository
 from src.repositories.userRepo import userRepository
 from src.types.auth.GET import sessionPostLogin, sessionPreLogin
 from src.types.auth.POST import (forgotPasswordRequest, googleLoginRequest,
@@ -28,15 +28,15 @@ from src.utils.sendEmail import sendEmail
 class authUsecase():
     def __init__(self, 
                  userRepo: userRepository,
+                 transactionRepo: transactionRepository,
                  flaskApp: Flask,
                  redisSession: Redis,
-                 pwHasher: PasswordHasher,
-                 limiter: Limiter):
+                 pwHasher: PasswordHasher):
         self.userRepo = userRepo
+        self.transactionRepo = transactionRepo
         self.app = flaskApp
         self.redisSession = redisSession
         self.passwordHasher = pwHasher
-        self.limiter = limiter
 
     def googleLogin(self, data: googleLoginRequest) -> googleUser:
         flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
@@ -57,10 +57,7 @@ class authUsecase():
         user = {
             "userEmail": userInfo['email'],
             "userName": userInfo['name'],
-            "userPictureLink": userInfo['picture'],
-            "accessToken": flowCreds.token,
-            "refreshToken": flowCreds.refresh_token,
-            "grantedScopes": flowCreds.granted_scopes
+            "userPictureLink": userInfo['picture']
         }
         
         # Check if user with this email already exists
@@ -89,8 +86,11 @@ class authUsecase():
         session.update( sessionPostLogin( **{
             "userID": result.userID,
             "CSRFToken": secrets.token_urlsafe(128),
-            "needTransactionsReFetch": True
-        } ).model_dump() )
+            "needTransactionsReFetch": True,
+            "accessToken": flowCreds.token,
+            "refreshToken": flowCreds.refresh_token,
+            "grantedScopes": flowCreds.granted_scopes
+        } ).model_dump(exclude_none=True) )
         current_app.session_interface.regenerate(session) # regenerate session ID
 
         # # Finally, allow fetching transaction data upon login
@@ -132,7 +132,8 @@ class authUsecase():
             id = convertStrToObjectID(field=session['userID'], fieldName='userID', originFuncName='authUsecase.retrieveCredentials')
             result: dict = self.userRepo.getUserCredentials(
                 filter = {"_id": id},
-                projection = {'hashedPassword': False}
+                projection = {'hashedPassword': False, 'activationToken': False, 
+                              'resetPasswordExpireTime': False, 'resetPasswordToken': False}
             )
             result['userID'] = str(result.pop('_id'))
             
@@ -204,7 +205,7 @@ class authUsecase():
             "userID": cred.userID,
             "CSRFToken": secrets.token_urlsafe(128),
             "needTransactionsReFetch": True # Allow fetching transaction data upon login
-        } ).model_dump() )
+        } ).model_dump(exclude_none=True) )
         current_app.session_interface.regenerate(session) # regenerate session ID
 
         return result
@@ -225,29 +226,24 @@ class authUsecase():
         token = secrets.token_urlsafe(128)
         
         # Send account activation email that contains the activation token to client
-        try:
-            with self.limiter.limit('1 per 10 seconds'):
-                subject = "Activate new account for First balance"
-                body = f"""\
-                <html>
-                    <head></head>
-                        <body>
-                            <p>Thank you for signing up to First balance.</p>
-                            <p>To be able to log in and fully use your account with this email, please click the account activation link below.</p>
-                            <p><a href="http://localhost:8081/activateAccount?token={token}">http://localhost:8081/activateAccount?token={token}</a></p>
-                            
-                            <p>If you cannot directly click the link, you can copy and paste it onto your browser's search bar as well.</p>
-                            <p>For security purposes, <b>the activation link will expire in 6 hours.</b> 
-                            <br></br>Your account will be deleted after that, but you may use the same email to sign up again.</p>
-                        </body>
-                </html>"""
-                sender = "firstbalanceproject@gmail.com"
-                recipient = data.userEmail
+        subject = "Activate new account for First balance"
+        body = f"""\
+        <html>
+            <head></head>
+                <body>
+                    <p>Thank you for signing up to First balance.</p>
+                    <p>To be able to log in and fully use your account with this email, please click the account activation link below.</p>
+                    <p><a href="http://localhost:8081/activateAccount?token={token}">http://localhost:8081/activateAccount?token={token}</a></p>
+                    
+                    <p>If you cannot directly click the link, you can copy and paste it onto your browser's search bar as well.</p>
+                    <p>For security purposes, <b>the activation link will expire in 6 hours.</b> 
+                    <br></br>Your account will be deleted after that, but you may use the same email to sign up again.</p>
+                </body>
+        </html>"""
+        sender = "firstbalanceproject@gmail.com"
+        recipient = data.userEmail
 
-                sendEmail(subject=subject, body=body, sender=sender, recipients=recipient, requiresHTML=True)
-        except RateLimitExceeded as e:
-            raise AppError(f'Error from authUsecase.signUp: rate limit exceeded. Details: {e}'
-                           , authResponses.signUp.ERROR_EMAIL_RATE_LIMIT_EXCEEDED, 429)
+        sendEmail(subject=subject, body=body, sender=sender, recipients=recipient, requiresHTML=True)
         
         # Hash the password, create an activation token, and store in DB
         hashcode = self.passwordHasher.hash(data.password)
@@ -316,28 +312,23 @@ class authUsecase():
         token = secrets.token_urlsafe(128)
 
         # Send email to client to reset password
-        try:
-            with self.limiter.limit('1 per 10 seconds'):
-                subject = "Reset your First balance account password"
-                body = f"""\
-                <html>
-                    <head></head>
-                        <body>
-                            <p>Please click the link below to reset your password.</p>
-                            <p><a href="http://localhost:8081/resetPassword?token={token}">http://localhost:8081/resetPassword?token={token}</a></p>
-                            
-                            <p>If you cannot directly click the link, you can copy and paste it onto your browser's search bar as well.</p>
-                            <p>For security purposes, <b>the link will expire in 6 hours.</b> 
-                            <br></br>You may request for password reset email again after that.</p>
-                        </body>
-                </html>"""
-                sender = "firstbalanceproject@gmail.com"
-                recipient = data.userEmail
+        subject = "Reset your First balance account password"
+        body = f"""\
+        <html>
+            <head></head>
+                <body>
+                    <p>Please click the link below to reset your password.</p>
+                    <p><a href="http://localhost:8081/resetPassword?token={token}">http://localhost:8081/resetPassword?token={token}</a></p>
+                    
+                    <p>If you cannot directly click the link, you can copy and paste it onto your browser's search bar as well.</p>
+                    <p>For security purposes, <b>the link will expire in 6 hours.</b> 
+                    <br></br>You may request for password reset email again after that.</p>
+                </body>
+        </html>"""
+        sender = "firstbalanceproject@gmail.com"
+        recipient = data.userEmail
 
-                sendEmail(subject=subject, sender=sender, recipients=recipient, body=body, requiresHTML=True)
-        except RateLimitExceeded as e:
-            raise AppError(f'Error from authUsecase.signUp: rate limit exceeded. Details: {e}', 
-                           authResponses.requestForgotPassword.ERROR_EMAIL_RATE_LIMIT_EXCEEDED, 429)
+        sendEmail(subject=subject, sender=sender, recipients=recipient, body=body, requiresHTML=True)
 
         # Put the token in DB
         try:
@@ -399,18 +390,14 @@ class authUsecase():
         session.clear()
         self.redisSession.delete(f"session:{session.sid}")
 
-    def deleteAccount(self, userID: str) -> normalUser:
+    def deleteAccount(self, userID: str) -> None:
         sessionType = checkSessionType(dict(session))
         if sessionType != "postLogin":
             raise AppError('Error from authUsecase.deleteAccount: Invalid session format, likely because user is not authenticated.',
                            authResponses.deleteAccount.ERROR_UNAUTHENTICATED_SESSION, 401)
         
         id = convertStrToObjectID(field=userID, fieldName='userID', originFuncName='authUsecase.deleteAccount')
-        try:
-            result = self.userRepo.deleteUserCredentials(filter={'_id': id}, projection={'hashedPassword': False})
-            result['userID'] = str(result.pop('_id'))
-            cred = normalUser( **result )
-            return cred
-        except ValidationError as e:
-            raise AppError("Error from authUsecase.deleteAccount: Invalid return data.",
-                           authResponses.deleteAccount.ERROR_INVALID_DELETE_FROM_DB, 500)
+
+        self.userRepo.deleteUserCredentials(filter={'_id': id})
+        self.transactionRepo.deleteAll(userID = session['userID'])
+        return

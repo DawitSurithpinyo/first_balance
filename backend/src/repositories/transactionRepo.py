@@ -67,5 +67,14 @@ class transactionRepository:
         )
 
         return
+    
+    def deleteAll(self, userID: str) -> None:
+        """
+            For deleting everything when user deletes account
+        """
+        col = self.userDataDB[f'{userID}']
+
+        col.delete_many()
+        return
 
         
