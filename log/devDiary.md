@@ -89,3 +89,15 @@
     - `expireAfterSeconds`: impose 6 hours TTL on documents
     - `sparse`: Any document without `createdTime` field will not be subjected to the 6 hours TTL, AKA documents for accounts already activated.
     - Documents for user signing up via Google OAuth are not subjected to this, only manual sign up.
+
+## 20 - 25 August
+- Implement [rate limiting](https://flask-limiter.readthedocs.io/en/stable/api.html)
+- Create "message code"/"return code" for all responses, both in success and error cases.
+    - This is to make sure responses have consistent "ID", which can be useful for front-end; it will know what appropriate message to display on UI based on the "ID" (SUCCESS_CASE_1, ERROR_XYZ, etc.). Back-end response messages cannot be shown directly to front-end client, as they are made for technical purposes.
+
+## 1 - 5 September
+- Additional rate limits in `api/auth/getCredentials`, `api/auth/signIn`, `api/auth/signUp`, `api/auth/requestForgotPassword` to prevent spamming in sensitive/potentially spammable routes.
+- Remove Google OAuth's access token, refresh tokens, and granted scopes from data to be returned to client.
+    - They are not needed on client side.
+    - Potential vulnerabilities.
+    - They can change session to session, so not storing on DB either, just store on server-side session.
